@@ -3,3 +3,7 @@ uvicorn
 requests
 python-dotenv
 python-multipart
+firebase-admin
+cryptography
+twilio
+apscheduler

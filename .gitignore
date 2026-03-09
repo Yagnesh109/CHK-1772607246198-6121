@@ -5,15 +5,22 @@
 **/.env
 **/.env.*
 !**/.env.example
+.envrc
+*.env.local
+*.env.production
+*.env.development
 
 # Secrets / credentials
 **/*serviceAccount*.json
+serviceAccountKey.json
 **/serviceAccountKey.json
 **/google-services.json
 **/GoogleService-Info.plist
 **/firebase-adminsdk-*.json
 **/*credentials*.json
 **/*secret*.json
+**/*token*.json
+**/*token*.txt
 **/*.pem
 **/*.key
 **/*.p12
@@ -22,7 +29,23 @@
 **/*private*.key
 **/*_rsa
 **/*id_rsa
+**/*.p8
+**/*.crt
+**/*.cer
+**/*oauth*secret*.json
+**/client_secret*.json
+**/secrets.*
+**/.secrets/
+**/keys/
 backend/serviceAccountKey.json
+backend/serviceAccountKey*.json
+medicine_app/android/app/google-services.json
+medicine_app/ios/Runner/GoogleService-Info.plist
+
+# Backup/exported secret files
+*.backup
+*.secret
+*.secrets
 
 # Python
 __pycache__/

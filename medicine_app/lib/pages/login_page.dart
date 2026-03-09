@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import '../pages/home_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -37,11 +36,6 @@ class _LoginPageState extends State<LoginPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomePage()),
-        );
-      }
     } on FirebaseAuthException catch (e) {
       _showMessage(e.message ?? 'Email sign-in failed.');
     } finally {
@@ -52,9 +46,13 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _signInWithGoogle() async {
     setState(() => _isLoading = true);
     try {
+      User? signedInUser;
       if (kIsWeb) {
         final provider = GoogleAuthProvider();
-        await FirebaseAuth.instance.signInWithPopup(provider);
+        final credential = await FirebaseAuth.instance.signInWithPopup(
+          provider,
+        );
+        signedInUser = credential.user;
       } else {
         await GoogleSignIn().signOut();
         final googleUser = await GoogleSignIn().signIn();
@@ -67,12 +65,13 @@ class _LoginPageState extends State<LoginPage> {
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-        await FirebaseAuth.instance.signInWithCredential(credential);
-      }
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomePage()),
+        final userCredential = await FirebaseAuth.instance.signInWithCredential(
+          credential,
         );
+        signedInUser = userCredential.user;
+      }
+      if (signedInUser == null) {
+        _showMessage('Google sign-in failed. Please try again.');
       }
     } on FirebaseAuthException catch (e) {
       _showMessage(e.message ?? 'Google sign-in failed.');
@@ -90,9 +89,9 @@ class _LoginPageState extends State<LoginPage> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -111,19 +110,13 @@ class _LoginPageState extends State<LoginPage> {
                   const Text(
                     'Welcome to MediMind',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Sign in to continue',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 32),
                   TextField(
@@ -170,10 +163,7 @@ class _LoginPageState extends State<LoginPage> {
                   Text(
                     'By continuing, you agree to our terms and privacy policy.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
               ),

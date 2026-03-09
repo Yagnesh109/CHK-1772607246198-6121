@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'core/theme/app_theme.dart';
+import 'features/secure/data/secure_store_service.dart';
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
+import 'pages/role_selection_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,8 +42,26 @@ class _AuthGate extends StatelessWidget {
           );
         }
 
-        if (snapshot.data != null) {
-          return const HomePage();
+        final user = snapshot.data;
+        if (user != null) {
+          return FutureBuilder<Map<String, dynamic>>(
+            future: SecureStoreService.getUserProfile(),
+            builder: (context, profileSnapshot) {
+              if (profileSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              final profile = profileSnapshot.data ?? {};
+              final role = profile['role']?.toString();
+              if (role == null || role.trim().isEmpty) {
+                return RoleSelectionPage(user: user);
+              }
+
+              return const HomePage();
+            },
+          );
         }
 
         return const LoginPage();

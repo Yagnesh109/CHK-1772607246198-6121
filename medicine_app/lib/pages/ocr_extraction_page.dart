@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import '../features/secure/data/secure_store_service.dart';
 
 class OcrExtractionPage extends StatefulWidget {
   const OcrExtractionPage({super.key});
@@ -235,24 +235,20 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
 
     setState(() => _isSaving = true);
     try {
-      await FirebaseFirestore.instance.collection('medicines').add({
-        'userId': user.uid,
-        'userEmail': user.email,
+      final response = await SecureStoreService.saveMedicine({
         'medicineName': _medicineNameController.text.trim(),
         'dosage': _dosageController.text.trim(),
-        'startDate': Timestamp.fromDate(
-          DateTime(_startDate!.year, _startDate!.month, _startDate!.day),
-        ),
-        'endDate': Timestamp.fromDate(
-          DateTime(_endDate!.year, _endDate!.month, _endDate!.day),
-        ),
+        'startDate': _formatDate(_startDate),
+        'endDate': _formatDate(_endDate),
         'timeHour': _time!.hour,
         'timeMinute': _time!.minute,
         'mealType': _mealType,
         'mealRelation': _mealRelation,
         'source': 'ocr',
-        'createdAt': FieldValue.serverTimestamp(),
       });
+      if (response['error'] != null) {
+        throw Exception(response['error'].toString());
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -274,15 +270,6 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
       } else {
         Navigator.of(context).pop();
       }
-    } on FirebaseException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Firestore error (${e.code}): ${e.message ?? "Unknown error"}',
-          ),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
