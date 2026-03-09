@@ -2,8 +2,27 @@
 .env
 .env.*
 !.env.example
-backend/.env
-medicine_app/.env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Secrets / credentials
+**/*serviceAccount*.json
+**/serviceAccountKey.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase-adminsdk-*.json
+**/*credentials*.json
+**/*secret*.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/*.keystore
+**/*private*.key
+**/*_rsa
+**/*id_rsa
+backend/serviceAccountKey.json
 
 # Python
 __pycache__/
@@ -13,18 +32,40 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.mypy_cache/
+.ruff_cache/
+*.log
+*.sqlite3
 
 # Flutter / Dart
 **/.dart_tool/
 **/.flutter-plugins-dependencies
 **/.pub/
 **/build/
+**/coverage/
+**/.packages
+**/.flutter-plugins
 
 # IDE / OS
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
+*.swp
+*.tmp
+*.bak
+*.old
+*.orig
+.history/
+.idea/**/workspace.xml
+.idea/**/shelf/
 
 # Local artifacts
 *.zip
+*.dmp
+*.stackdump
+
+# Android / iOS local files
+**/android/local.properties
+**/android/.gradle/
+**/ios/Flutter/Generated.xcconfig

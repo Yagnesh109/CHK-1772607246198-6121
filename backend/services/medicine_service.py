@@ -16,39 +16,65 @@ def _format_medicine_response(result):
 
 def _barcode_candidates(raw_code):
     code = "".join(ch for ch in raw_code if ch.isdigit())
-    candidates = set()
+    candidates = []
+    seen = set()
+
+    def add(value):
+        if not value or value in seen:
+            return
+        seen.add(value)
+        candidates.append(value)
 
     if not code:
         return []
 
-    # Original numeric code as-is.
-    candidates.add(code)
+    # Always try raw numeric value first.
+    add(code)
 
-    # Common UPC-A medicine packaging pattern:
-    # 12-digit UPC => [number-system][10-digit NDC payload][check-digit]
-    # Convert to possible 10-digit and 11-digit NDC-like candidates.
+    # EAN-13 that starts with 0 often wraps a UPC-A payload.
+    if len(code) == 13 and code.startswith("0"):
+        add(code[1:])
+
+    upc12 = None
     if len(code) == 12:
-        ndc10 = code[1:11]
-        ndc11 = code[1:11].zfill(11)
+        upc12 = code
+    elif len(code) == 13 and code.startswith("0"):
+        upc12 = code[1:]
 
-        candidates.add(ndc10)
-        candidates.add(ndc11)
+    # Common Rx UPC-A pattern:
+    # 12-digit UPC => [number-system][10-digit NDC payload][check-digit]
+    if upc12:
+        ndc10 = upc12[1:11]
+        add(ndc10)
 
-        # Hyphenated possibilities (10-digit NDC segment patterns).
+        # 10-digit NDC can be one of 4-4-2, 5-3-2, 5-4-1.
+        # Convert to 11-digit by zero-padding the correct segment.
         if len(ndc10) == 10:
-            candidates.add(f"{ndc10[0:4]}-{ndc10[4:8]}-{ndc10[8:10]}")
-            candidates.add(f"{ndc10[0:5]}-{ndc10[5:8]}-{ndc10[8:10]}")
-            candidates.add(f"{ndc10[0:5]}-{ndc10[5:9]}-{ndc10[9:10]}")
+            # 4-4-2 -> 5-4-2
+            ndc11_a = f"0{ndc10[0:4]}{ndc10[4:8]}{ndc10[8:10]}"
+            # 5-3-2 -> 5-4-2
+            ndc11_b = f"{ndc10[0:5]}0{ndc10[5:8]}{ndc10[8:10]}"
+            # 5-4-1 -> 5-4-2
+            ndc11_c = f"{ndc10[0:5]}{ndc10[5:9]}0{ndc10[9:10]}"
 
-        # Standard 11-digit FDA style (5-4-2).
-        if len(ndc11) == 11:
-            candidates.add(f"{ndc11[0:5]}-{ndc11[5:9]}-{ndc11[9:11]}")
+            add(ndc11_a)
+            add(ndc11_b)
+            add(ndc11_c)
+
+            # Hyphenated 10-digit representations.
+            add(f"{ndc10[0:4]}-{ndc10[4:8]}-{ndc10[8:10]}")
+            add(f"{ndc10[0:5]}-{ndc10[5:8]}-{ndc10[8:10]}")
+            add(f"{ndc10[0:5]}-{ndc10[5:9]}-{ndc10[9:10]}")
+
+            # Hyphenated 11-digit 5-4-2 representations.
+            for ndc11 in (ndc11_a, ndc11_b, ndc11_c):
+                add(f"{ndc11[0:5]}-{ndc11[5:9]}-{ndc11[9:11]}")
 
     # Also try 11-digit to hyphenated FDA format.
     if len(code) == 11:
-        candidates.add(f"{code[0:5]}-{code[5:9]}-{code[9:11]}")
+        add(f"{code[0:5]}-{code[5:9]}-{code[9:11]}")
 
-    return list(candidates)
+    return candidates
 
 def get_medicine(name):
     base_url = OPENFDA_BASE_URL
@@ -110,7 +136,12 @@ def get_medicine_by_barcode(barcode):
             continue
 
     if "results" not in data or not data["results"]:
-        return {"message": "Medicine not found for barcode"}
+        return {
+            "message": (
+                "Medicine not found for barcode in OpenFDA. "
+                "OpenFDA barcode/NDC data is mostly US-market; many non-US barcodes are not present."
+            )
+        }
 
     result = data["results"][0]
     return _format_medicine_response(result)
