@@ -3,6 +3,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../features/secure/data/secure_store_service.dart';
+import 'home_page.dart';
+import 'role_selection_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -36,6 +39,7 @@ class _LoginPageState extends State<LoginPage> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+      await _goNext();
     } on FirebaseAuthException catch (e) {
       _showMessage(e.message ?? 'Email sign-in failed.');
     } finally {
@@ -54,7 +58,6 @@ class _LoginPageState extends State<LoginPage> {
         );
         signedInUser = credential.user;
       } else {
-        await GoogleSignIn().signOut();
         final googleUser = await GoogleSignIn().signIn();
         if (googleUser == null) {
           setState(() => _isLoading = false);
@@ -72,15 +75,23 @@ class _LoginPageState extends State<LoginPage> {
       }
       if (signedInUser == null) {
         _showMessage('Google sign-in failed. Please try again.');
+      } else {
+        await _goNext();
       }
     } on FirebaseAuthException catch (e) {
-      _showMessage(e.message ?? 'Google sign-in failed.');
+      if (e.code == 'account-exists-with-different-credential') {
+        _showMessage(
+          'This email is linked with another sign-in method. Please use that method to sign in.',
+        );
+      } else {
+        _showMessage(e.message ?? 'Google sign-in failed.');
+      }
     } on PlatformException catch (e) {
       _showMessage(
         'Google sign-in configuration issue on Android (${e.code}). '
         'Check Firebase Android setup and SHA certificates.',
       );
-    } catch (_) {
+    } catch (e) {
       _showMessage('Google sign-in failed. Please try again.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -92,6 +103,24 @@ class _LoginPageState extends State<LoginPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _goNext() async {
+    final profile = await SecureStoreService.getUserProfile();
+    final role = profile['role']?.toString().trim();
+    if (!mounted) return;
+    if (role == null || role.isEmpty) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) =>
+              RoleSelectionPage(user: FirebaseAuth.instance.currentUser!),
+        ),
+      );
+    } else {
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+    }
   }
 
   @override

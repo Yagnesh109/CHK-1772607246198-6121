@@ -62,6 +62,12 @@ app.*.map.json
 **/*id_rsa*
 **/*rsa_private*
 **/*private_key*
+**/*_key.*
+**/*-key.*
+**/*secret*.key
+**/*secret*.pem
+**/*secret*.p12
+**/*secret*.jks
 .env
 .env.*
 !.env.example

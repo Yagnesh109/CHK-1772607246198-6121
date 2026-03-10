@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../features/secure/data/secure_store_service.dart';
 
@@ -16,6 +17,8 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _allergiesController = TextEditingController();
+  final TextEditingController _qualificationController =
+      TextEditingController();
   String _gender = '';
   DateTime? _dob;
 
@@ -38,6 +41,7 @@ class _ProfilePageState extends State<ProfilePage> {
     _weightController.dispose();
     _heightController.dispose();
     _allergiesController.dispose();
+    _qualificationController.dispose();
     super.dispose();
   }
 
@@ -52,6 +56,8 @@ class _ProfilePageState extends State<ProfilePage> {
       _weightController.text = profile['weightKg']?.toString() ?? '';
       _heightController.text = profile['heightCm']?.toString() ?? '';
       _allergiesController.text = profile['allergies']?.toString() ?? '';
+      _qualificationController.text =
+          profile['qualification']?.toString() ?? '';
       final rawDob = profile['dob']?.toString() ?? '';
       if (rawDob.isNotEmpty) {
         _dob = DateTime.tryParse(rawDob);
@@ -259,6 +265,39 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Widget _doctorCard() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Doctor Details',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _qualificationController,
+              decoration: const InputDecoration(
+                labelText: 'Qualification',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.school_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _saveDoctorInfo,
+              icon: const Icon(Icons.save),
+              label: const Text('Save Doctor Profile'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   double? _calculateBmi() {
     final weight = double.tryParse(_weightController.text.trim());
     final heightCm = double.tryParse(_heightController.text.trim());
@@ -286,6 +325,23 @@ class _ProfilePageState extends State<ProfilePage> {
   double _bmiProgress(double bmi) {
     final normalized = (bmi - 12) / 28;
     return normalized.clamp(0.0, 1.0);
+  }
+
+  Future<void> _saveDoctorInfo() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'role': 'Doctor',
+      'displayName': user.displayName,
+      'email': user.email,
+      'qualification': _qualificationController.text.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Doctor profile updated.')));
+    }
   }
 
   Future<void> _pickDob() async {
@@ -425,6 +481,10 @@ class _ProfilePageState extends State<ProfilePage> {
                 label: Text(_isSaving ? 'Saving...' : 'Save'),
               ),
               const SizedBox(height: 24),
+              if (_role == 'Doctor') ...[
+                _doctorCard(),
+                const SizedBox(height: 24),
+              ],
               if (_role == 'Patient') ...[
                 TextField(
                   controller: _doctorCodeController,

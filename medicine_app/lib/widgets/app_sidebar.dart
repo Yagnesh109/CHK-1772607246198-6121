@@ -4,7 +4,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import '../features/medicine/view/medicine_screen.dart';
 import '../features/secure/data/secure_store_service.dart';
 import '../pages/add_medicine_page.dart';
+import '../pages/consult_doctor_page.dart';
 import '../pages/login_page.dart';
+import '../pages/doctor_requests_page.dart';
 import '../pages/medicine_history_page.dart';
 import '../pages/profile_page.dart';
 import '../pages/settings_page.dart';
@@ -89,6 +91,28 @@ class AppSidebar extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => const MedicineHistoryPage(),
                   ),
+                );
+              },
+            ),
+          if (SecureStoreService.getCachedRole() == 'Doctor')
+            ListTile(
+              leading: const Icon(Icons.mail_outline),
+              title: const Text('Patient Requests'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const DoctorRequestsPage()),
+                );
+              },
+            ),
+          if (SecureStoreService.getCachedRole() == 'Patient')
+            ListTile(
+              leading: const Icon(Icons.chat_outlined),
+              title: const Text('Consult Doctor'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ConsultDoctorPage()),
                 );
               },
             ),

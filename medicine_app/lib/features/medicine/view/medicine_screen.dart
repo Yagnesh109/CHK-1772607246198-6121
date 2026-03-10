@@ -144,37 +144,62 @@ class _MedicineScreenState extends State<MedicineScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Medicine Info")),
+      appBar: AppBar(title: const Text("Medicine Search")),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _searchCard(),
+            const SizedBox(height: 16),
+            if (data != null) _resultCard(),
+            _disclaimer(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _searchCard() {
+    return Card(
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: controller,
               decoration: const InputDecoration(
                 labelText: "Enter medicine name",
+                prefixIcon: Icon(Icons.search),
               ),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _loading ? null : search,
-              child: _loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text("Search"),
-            ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _scanBarcode,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text("Scan Barcode"),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _loading ? null : search,
+                    icon: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search),
+                    label: Text(_loading ? "Searching..." : "Search"),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _scanBarcode,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text("Scan Barcode"),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 30),
-            if (data != null) _resultCard(),
           ],
         ),
       ),
@@ -195,12 +220,11 @@ class _MedicineScreenState extends State<MedicineScreen> {
     final usage = data?['usage']?.toString().trim();
     final dosage = data?['dosage']?.toString().trim();
     final sideEffects = data?['side_effects']?.toString().trim();
-    final source = data?['source']?.toString() ?? 'unknown';
     final warning = data?['warning']?.toString();
 
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 3,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -208,37 +232,42 @@ class _MedicineScreenState extends State<MedicineScreen> {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    brand?.isNotEmpty == true ? brand! : "Unknown medicine",
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D47A1).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  child: const Icon(Icons.medication, color: Color(0xFF0D47A1)),
                 ),
-                Chip(
-                  label: Text(
-                    source == 'gemini' ? 'Gemini fallback' : 'OpenFDA',
-                    style: TextStyle(
-                      color: source == 'gemini'
-                          ? Colors.deepPurple
-                          : Colors.blue.shade800,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  backgroundColor: source == 'gemini'
-                      ? Colors.deepPurple.shade50
-                      : Colors.blue.shade50,
-                  side: BorderSide(
-                    color: source == 'gemini'
-                        ? Colors.deepPurple.shade100
-                        : Colors.blue.shade100,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        brand?.isNotEmpty == true ? brand! : "Unknown medicine",
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0D47A1),
+                        ),
+                      ),
+                      if (warning != null && warning.isNotEmpty)
+                        Text(
+                          warning!,
+                          style: const TextStyle(
+                            color: Colors.blueGrey,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _infoRow(Icons.info_outline, usage, 'Usage not available'),
             const SizedBox(height: 10),
             _infoRow(
@@ -252,15 +281,19 @@ class _MedicineScreenState extends State<MedicineScreen> {
               sideEffects,
               'Side effects not available',
             ),
-            if (warning != null && warning.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                warning,
-                style: const TextStyle(color: Colors.orange, fontSize: 12),
-              ),
-            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _disclaimer() {
+    return const Padding(
+      padding: EdgeInsets.only(top: 12),
+      child: Text(
+        "Note: This tool can make mistakes. Please verify medicine details.",
+        style: TextStyle(color: Colors.blueGrey, fontSize: 12),
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -269,7 +302,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: Colors.blue.shade700),
+        Icon(icon, size: 20, color: const Color(0xFF0D47A1)),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

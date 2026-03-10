@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../features/secure/data/secure_store_service.dart';
 import 'add_patient_page.dart';
+import 'doctor_chat_page.dart';
 import '../widgets/app_sidebar.dart';
 
 class HomePage extends StatefulWidget {
@@ -88,6 +91,10 @@ class _HomePageState extends State<HomePage> {
                 if (role == 'Patient') ...[
                   const SizedBox(height: 12),
                   const _PatientPendingMedicinesSection(),
+                ],
+                if (role == 'Doctor') ...[
+                  const SizedBox(height: 12),
+                  const _DoctorAcceptedSection(),
                 ],
               ],
             ),
@@ -352,6 +359,99 @@ class _CaregiverPatientsSectionState extends State<_CaregiverPatientsSection> {
           const SizedBox(height: 8),
         ],
       ],
+    );
+  }
+}
+
+class _DoctorAcceptedSection extends StatelessWidget {
+  const _DoctorAcceptedSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    final stream = FirebaseFirestore.instance
+        .collection('connection_requests')
+        .where('doctorUid', isEqualTo: user.uid)
+        .where('status', isEqualTo: 'accepted')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Accepted Patients',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: stream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Text('Error: ${snapshot.error}');
+                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return const Text('No accepted requests yet.');
+                }
+                return Column(
+                  children: docs.map((doc) {
+                    final data = doc.data();
+                    final email = data['patientEmail']?.toString() ?? 'Patient';
+                    final patientUid = data['patientUid']?.toString() ?? '';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(
+                          0xFF0D47A1,
+                        ).withOpacity(0.15),
+                        child: const Icon(
+                          Icons.person,
+                          color: Color(0xFF0D47A1),
+                        ),
+                      ),
+                      title: Text(
+                        email,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: const Text('Accepted'),
+                      trailing: TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => DoctorChatPage(
+                                patientUid: patientUid,
+                                patientEmail: email,
+                                doctorUid: user.uid,
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text('Open Chat'),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

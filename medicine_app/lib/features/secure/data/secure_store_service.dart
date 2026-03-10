@@ -16,12 +16,11 @@ class SecureStoreService {
       return {"error": "User not logged in."};
     }
 
-    final token = await user.getIdToken(true);
+    final token = await user.getIdToken();
     final uri = Uri.https(_host, path);
-    final res = await http.get(
-      uri,
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final res = await http
+        .get(uri, headers: {"Authorization": "Bearer $token"})
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(res);
   }
 
@@ -34,16 +33,18 @@ class SecureStoreService {
       return {"error": "User not logged in."};
     }
 
-    final token = await user.getIdToken(true);
+    final token = await user.getIdToken();
     final uri = Uri.https(_host, path);
-    final res = await http.post(
-      uri,
-      headers: {
-        "Authorization": "Bearer $token",
-        "Content-Type": "application/json",
-      },
-      body: jsonEncode(payload),
-    );
+    final res = await http
+        .post(
+          uri,
+          headers: {
+            "Authorization": "Bearer $token",
+            "Content-Type": "application/json",
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(res);
   }
 
@@ -53,12 +54,11 @@ class SecureStoreService {
       return {"error": "User not logged in."};
     }
 
-    final token = await user.getIdToken(true);
+    final token = await user.getIdToken();
     final uri = Uri.https(_host, path);
-    final res = await http.delete(
-      uri,
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final res = await http
+        .delete(uri, headers: {"Authorization": "Bearer $token"})
+        .timeout(const Duration(seconds: 15));
     return _decodeResponse(res);
   }
 
