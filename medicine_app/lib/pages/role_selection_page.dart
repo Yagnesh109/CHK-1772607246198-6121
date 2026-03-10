@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -53,17 +54,17 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
     const roles = ['Patient', 'Caregiver', 'Doctor'];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Select Role'), centerTitle: true),
+      appBar: AppBar(title: Text(tr('select_role')), centerTitle: true),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 12),
-            const Text(
-              'Please select your role to continue.',
+            Text(
+              tr('select_role_hint'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
+              style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 24),
             for (final role in roles) ...[
@@ -72,7 +73,7 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                child: Text(role),
+                child: Text(tr(role.toLowerCase())),
               ),
               const SizedBox(height: 12),
             ],

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -29,7 +30,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _signInWithEmail() async {
     if (_emailController.text.trim().isEmpty ||
         _passwordController.text.isEmpty) {
-      _showMessage('Please enter email and password.');
+      _showMessage(tr('enter_email_password'));
       return;
     }
 
@@ -41,7 +42,7 @@ class _LoginPageState extends State<LoginPage> {
       );
       await _goNext();
     } on FirebaseAuthException catch (e) {
-      _showMessage(e.message ?? 'Email sign-in failed.');
+      _showMessage(e.message ?? tr('email_signin_failed'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -74,25 +75,20 @@ class _LoginPageState extends State<LoginPage> {
         signedInUser = userCredential.user;
       }
       if (signedInUser == null) {
-        _showMessage('Google sign-in failed. Please try again.');
+        _showMessage(tr('google_signin_failed'));
       } else {
         await _goNext();
       }
     } on FirebaseAuthException catch (e) {
       if (e.code == 'account-exists-with-different-credential') {
-        _showMessage(
-          'This email is linked with another sign-in method. Please use that method to sign in.',
-        );
+        _showMessage(tr('account_exists_other_method'));
       } else {
-        _showMessage(e.message ?? 'Google sign-in failed.');
+        _showMessage(e.message ?? tr('google_signin_failed'));
       }
     } on PlatformException catch (e) {
-      _showMessage(
-        'Google sign-in configuration issue on Android (${e.code}). '
-        'Check Firebase Android setup and SHA certificates.',
-      );
+      _showMessage(tr('google_android_config_issue', args: [e.code]));
     } catch (e) {
-      _showMessage('Google sign-in failed. Please try again.');
+      _showMessage(tr('google_signin_failed'));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -136,14 +132,17 @@ class _LoginPageState extends State<LoginPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 24),
-                  const Text(
-                    'Welcome to MediMind',
+                  Text(
+                    tr('welcome_title'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Sign in to continue',
+                    tr('signin_continue'),
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
@@ -151,18 +150,18 @@ class _LoginPageState extends State<LoginPage> {
                   TextField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: tr('email'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _passwordController,
                     obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: tr('password'),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -177,20 +176,20 @@ class _LoginPageState extends State<LoginPage> {
                             width: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('Sign in with Email'),
+                        : Text(tr('signin_email')),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _signInWithGoogle,
                     icon: const Icon(Icons.g_mobiledata),
-                    label: const Text('Sign in with Google'),
+                    label: Text(tr('signin_google')),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'By continuing, you agree to our terms and privacy policy.',
+                    tr('terms_hint'),
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),

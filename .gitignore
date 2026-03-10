@@ -48,6 +48,14 @@ backend/serviceAccountKey.json
 backend/serviceAccountKey*.json
 medicine_app/android/app/google-services.json
 medicine_app/ios/Runner/GoogleService-Info.plist
+backend/.env
+backend/.env.*
+medicine_app/.env
+medicine_app/.env.*
+**/key.properties
+**/*.pfx
+**/*.der
+**/*.cert
 
 # Backup/exported secret files
 *.backup

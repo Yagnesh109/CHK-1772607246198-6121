@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../features/secure/data/secure_store_service.dart';
 import 'manualentry.dart';
@@ -25,11 +26,9 @@ class _AddMedicinePageState extends State<AddMedicinePage> {
     final role = profile['role']?.toString().trim();
     final phone = profile['phoneNumber']?.toString().trim() ?? '';
     if (role == 'Patient' && phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please add mobile number first in Profile.'),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('add_mobile_first')),
+      ));
       return;
     }
 
@@ -42,7 +41,7 @@ class _AddMedicinePageState extends State<AddMedicinePage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF87CEEB),
         centerTitle: true,
-        title: const Text('Add Medicine'),
+        title: Text(tr('add_medicine')),
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
@@ -52,15 +51,15 @@ class _AddMedicinePageState extends State<AddMedicinePage> {
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.edit_note_outlined,
-              title: 'Manual Entry',
-              subtitle: 'Add medicine details manually.',
+              title: tr('manual_entry'),
+              subtitle: tr('manual_entry_subtitle'),
               onTap: () => _openIfAllowed(const ManualEntryPage()),
             ),
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.document_scanner_outlined,
-              title: 'OCR Extraction',
-              subtitle: 'Capture or upload image and auto-fill fields.',
+              title: tr('ocr_extraction'),
+              subtitle: tr('ocr_extraction_subtitle'),
               onTap: () => _openIfAllowed(const OcrExtractionPage()),
             ),
           ],

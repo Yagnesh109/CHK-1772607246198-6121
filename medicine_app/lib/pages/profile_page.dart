@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../features/secure/data/secure_store_service.dart';
 
@@ -13,7 +13,6 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _doctorCodeController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _allergiesController = TextEditingController();
@@ -24,9 +23,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   bool _isLoading = false;
   bool _isSaving = false;
-  bool _sending = false;
   String _role = '';
-  String _requestStatus = 'No request sent yet.';
 
   @override
   void initState() {
@@ -37,7 +34,6 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void dispose() {
     _phoneController.dispose();
-    _doctorCodeController.dispose();
     _weightController.dispose();
     _heightController.dispose();
     _allergiesController.dispose();
@@ -62,33 +58,87 @@ class _ProfilePageState extends State<ProfilePage> {
       if (rawDob.isNotEmpty) {
         _dob = DateTime.tryParse(rawDob);
       }
+
+      // Pull latest data from Firestore so the profile persists across devices.
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final data = snap.data();
+        if (data != null) {
+          _phoneController.text =
+              data['phoneNumber']?.toString() ?? _phoneController.text;
+          _role = (data['role'] ?? _role).toString();
+          _gender = data['gender']?.toString() ?? _gender;
+          _weightController.text =
+              data['weightKg']?.toString() ?? _weightController.text;
+          _heightController.text =
+              data['heightCm']?.toString() ?? _heightController.text;
+          _allergiesController.text =
+              data['allergies']?.toString() ?? _allergiesController.text;
+          _qualificationController.text =
+              data['qualification']?.toString() ??
+              _qualificationController.text;
+          final dobStr = data['dob']?.toString() ?? '';
+          if (dobStr.isNotEmpty) {
+            _dob = DateTime.tryParse(dobStr) ?? _dob;
+          }
+        }
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _savePhone() async {
+  Future<void> _saveProfile() async {
     final phone = _phoneController.text.trim();
     if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter mobile number.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('please_enter_mobile'))));
       return;
     }
 
-    setState(() => _isSaving = true);
-    try {
-      final response = await SecureStoreService.setUserPhone(phone);
-      if (!mounted) return;
-      if (response['error'] != null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(response['error'].toString())));
-        return;
-      }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Mobile number saved.')));
+      ).showSnackBar(SnackBar(content: Text(tr('please_sign_in'))));
+      return;
+    }
+
+    final weight = double.tryParse(_weightController.text.trim());
+    final height = double.tryParse(_heightController.text.trim());
+    final allergies = _allergiesController.text.trim();
+    final qualification = _qualificationController.text.trim();
+    final resolvedRole = _role.isEmpty ? 'Patient' : _role;
+
+    setState(() => _isSaving = true);
+    try {
+      // Persist to Firestore for cross-device retention.
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'phoneNumber': phone,
+        'role': resolvedRole,
+        'displayName': user.displayName,
+        'email': user.email,
+        'gender': _gender,
+        'dob': _dob?.toIso8601String(),
+        if (weight != null) 'weightKg': weight,
+        if (height != null) 'heightCm': height,
+        'allergies': allergies,
+        'qualification': qualification,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // Keep secure store in sync for backend calls that rely on it.
+      await SecureStoreService.setUserPhone(phone);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('profile_saved'))));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -110,9 +160,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'BMI',
-                      style: TextStyle(
+                    Text(
+                      tr('bmi'),
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -120,7 +170,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     const SizedBox(height: 4),
                     Text(
                       bmi == null
-                          ? 'Add weight & height'
+                          ? tr('add_weight_height')
                           : '${bmi.toStringAsFixed(1)} (${_bmiCategory(bmi)})',
                       style: TextStyle(
                         fontSize: 14,
@@ -164,26 +214,26 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Health Details',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            Text(
+              tr('health_details'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Mobile Number',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.phone_android_outlined),
+              decoration: InputDecoration(
+                labelText: tr('mobile_number'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.phone_android_outlined),
               ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _gender.isEmpty ? null : _gender,
-              decoration: const InputDecoration(
-                labelText: 'Gender',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: tr('gender'),
+                border: const OutlineInputBorder(),
               ),
               items: const [
                 DropdownMenuItem(value: 'Male', child: Text('Male')),
@@ -196,14 +246,14 @@ class _ProfilePageState extends State<ProfilePage> {
             InkWell(
               onTap: _pickDob,
               child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Date of Birth',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.cake_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('dob'),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.cake_outlined),
                 ),
                 child: Text(
                   _dob == null
-                      ? 'Tap to select'
+                      ? tr('tap_to_select')
                       : '${_dob!.day.toString().padLeft(2, '0')}-${_dob!.month.toString().padLeft(2, '0')}-${_dob!.year}',
                 ),
               ),
@@ -212,10 +262,10 @@ class _ProfilePageState extends State<ProfilePage> {
             TextFormField(
               readOnly: true,
               decoration: InputDecoration(
-                labelText: 'Age',
+                labelText: tr('age'),
                 border: const OutlineInputBorder(),
                 prefixIcon: const Icon(Icons.calendar_today_outlined),
-                hintText: 'Not set',
+                hintText: tr('not_set'),
                 suffixText: age == null ? '' : 'years',
               ),
               controller: TextEditingController(
@@ -228,10 +278,10 @@ class _ProfilePageState extends State<ProfilePage> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Weight (kg)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.monitor_weight_outlined),
+              decoration: InputDecoration(
+                labelText: tr('weight'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.monitor_weight_outlined),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -241,10 +291,10 @@ class _ProfilePageState extends State<ProfilePage> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(
-                labelText: 'Height (cm)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.height_outlined),
+              decoration: InputDecoration(
+                labelText: tr('height'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.height_outlined),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -252,10 +302,10 @@ class _ProfilePageState extends State<ProfilePage> {
             TextField(
               controller: _allergiesController,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Allergies',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.warning_amber_outlined),
+              decoration: InputDecoration(
+                labelText: tr('allergies'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.warning_amber_outlined),
                 hintText: 'e.g. Penicillin, peanuts, dust',
               ),
             ),
@@ -273,24 +323,24 @@ class _ProfilePageState extends State<ProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Doctor Details',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            Text(
+              tr('doctor_details'),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _qualificationController,
-              decoration: const InputDecoration(
-                labelText: 'Qualification',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.school_outlined),
+              decoration: InputDecoration(
+                labelText: tr('qualification'),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.school_outlined),
               ),
             ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
               onPressed: _saveDoctorInfo,
               icon: const Icon(Icons.save),
-              label: const Text('Save Doctor Profile'),
+              label: Text(tr('save_doctor_profile')),
             ),
           ],
         ),
@@ -340,7 +390,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Doctor profile updated.')));
+      ).showSnackBar(SnackBar(content: Text(tr('doctor_profile_updated'))));
     }
   }
 
@@ -366,57 +416,6 @@ class _ProfilePageState extends State<ProfilePage> {
     return years < 0 ? null : years;
   }
 
-  Future<void> _sendRequestToDoctor() async {
-    final doctorCode = _doctorCodeController.text.trim();
-    if (doctorCode.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the doctor code.')),
-      );
-      return;
-    }
-    final user = FirebaseAuth.instance.currentUser;
-    final email = user?.email ?? '';
-    final uid = user?.uid ?? '';
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sign in to send a request.')),
-      );
-      return;
-    }
-
-    setState(() => _sending = true);
-    try {
-      final doctors = await FirebaseFirestore.instance
-          .collection('users')
-          .where('doctorCode', isEqualTo: doctorCode)
-          .where('role', isEqualTo: 'Doctor')
-          .limit(1)
-          .get();
-
-      if (doctors.docs.isEmpty) {
-        setState(() => _requestStatus = 'Doctor code not found.');
-        return;
-      }
-
-      final doctorUid = doctors.docs.first.id;
-      await FirebaseFirestore.instance.collection('connection_requests').add({
-        'patientEmail': email,
-        'patientUid': uid,
-        'doctorCode': doctorCode,
-        'doctorUid': doctorUid,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      setState(() => _requestStatus = 'Request sent to doctor.');
-    } catch (e) {
-      setState(() => _requestStatus = 'Failed to send request: $e');
-    } finally {
-      if (mounted) setState(() => _sending = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -424,7 +423,7 @@ class _ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF87CEEB),
         centerTitle: true,
-        title: const Text('Profile'),
+        title: Text(tr('profile')),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -470,7 +469,7 @@ class _ProfilePageState extends State<ProfilePage> {
               _profileForm(),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: _isSaving ? null : _savePhone,
+                onPressed: _isSaving ? null : _saveProfile,
                 icon: _isSaving
                     ? const SizedBox(
                         width: 18,
@@ -478,35 +477,12 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save_outlined),
-                label: Text(_isSaving ? 'Saving...' : 'Save'),
+                label: Text(_isSaving ? tr('saving') : tr('save')),
               ),
               const SizedBox(height: 24),
               if (_role == 'Doctor') ...[
                 _doctorCard(),
                 const SizedBox(height: 24),
-              ],
-              if (_role == 'Patient') ...[
-                TextField(
-                  controller: _doctorCodeController,
-                  decoration: const InputDecoration(
-                    labelText: 'Doctor code (e.g., DOC-123)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _sending ? null : _sendRequestToDoctor,
-                  child: _sending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Send Request'),
-                ),
-                const SizedBox(height: 8),
-                Text(_requestStatus, style: const TextStyle(fontSize: 14)),
-                const SizedBox(height: 20),
               ],
               if (_isLoading)
                 const Padding(

@@ -1,5 +1,7 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../features/secure/data/secure_store_service.dart';
 
 class ManualEntryPage extends StatefulWidget {
@@ -151,17 +153,15 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     });
   }
 
-  String _formatDate(DateTime? date) {
-    if (date == null) return 'Select Date';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  String _formatDate(BuildContext context, DateTime? date) {
+    if (date == null) return tr('select_date');
+    return DateFormat.yMMMd(context.locale.toString()).format(date);
   }
 
-  String _formatTime(TimeOfDay? time) {
-    if (time == null) return 'Select Time';
-    final h = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-    final m = time.minute.toString().padLeft(2, '0');
-    final p = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$h:$m $p';
+  String _formatTime(BuildContext context, TimeOfDay? time) {
+    if (time == null) return tr('select_time');
+    final dateTime = DateTime(0, 1, 1, time.hour, time.minute);
+    return DateFormat.jm(context.locale.toString()).format(dateTime);
   }
 
   Future<void> _saveMedicine({required bool addAnother}) async {
@@ -169,15 +169,15 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     if (user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please log in first.')));
+      ).showSnackBar(SnackBar(content: Text(tr('please_log_in_first'))));
       return;
     }
 
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null || _time == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select start date, end date and time.'),
+        SnackBar(
+          content: Text(tr('select_start_end_time')),
         ),
       );
       return;
@@ -185,7 +185,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
 
     if (_endDate!.isBefore(_startDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('End date cannot be before start date.')),
+        SnackBar(content: Text(tr('end_before_start'))),
       );
       return;
     }
@@ -194,7 +194,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         (_selectedRelation == null || _selectedRelation!.isEmpty)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please select relation.')));
+      ).showSnackBar(SnackBar(content: Text(tr('select_relation'))));
       return;
     }
 
@@ -202,7 +202,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         (_selectedPatientId == null || _selectedPatientId!.isEmpty)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a patient.')));
+      ).showSnackBar(SnackBar(content: Text(tr('select_patient'))));
       return;
     }
 
@@ -211,8 +211,8 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       final response = await SecureStoreService.saveMedicine({
         'medicineName': _medicineNameController.text.trim(),
         'dosage': _dosageController.text.trim(),
-        'startDate': _formatDate(_startDate),
-        'endDate': _formatDate(_endDate),
+        'startDate': _formatDate(context, _startDate),
+        'endDate': _formatDate(context, _endDate),
         'timeHour': _time!.hour,
         'timeMinute': _time!.minute,
         'mealType': _mealType,
@@ -227,7 +227,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Medicine saved.')));
+      ).showSnackBar(SnackBar(content: Text(tr('medicine_saved'))));
 
       if (addAnother) {
         _formKey.currentState!.reset();
@@ -247,7 +247,13 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to save medicine: $e')));
+      ).showSnackBar(
+        SnackBar(
+          content: Text(
+            tr('failed_to_save_medicine', args: ['$e']),
+          ),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -270,7 +276,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D47A1),
         centerTitle: true,
-        title: const Text('Manual Entry'),
+        title: Text(tr('manual_entry')),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -306,19 +312,19 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           Text(
-            'Add a Medicine',
-            style: TextStyle(
+            tr('add_medicine_title'),
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
-            'Enter details or assign to your patient. Reminder scheduling happens automatically.',
-            style: TextStyle(color: Colors.white70, height: 1.4),
+            tr('add_medicine_hint'),
+            style: const TextStyle(color: Colors.white70, height: 1.4),
           ),
         ],
       ),
@@ -342,24 +348,24 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
             children: [
               TextFormField(
                 controller: _medicineNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Medicine Name',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.medication_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('medicine_name'),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.medication_outlined),
                 ),
                 validator: (value) =>
-                    value == null || value.trim().isEmpty ? 'Required' : null,
+                    value == null || value.trim().isEmpty ? tr('required') : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _dosageController,
-                decoration: const InputDecoration(
-                  labelText: 'Dosage',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.science_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('dosage'),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.science_outlined),
                 ),
                 validator: (value) =>
-                    value == null || value.trim().isEmpty ? 'Required' : null,
+                    value == null || value.trim().isEmpty ? tr('required') : null,
               ),
               const SizedBox(height: 12),
               Row(
@@ -368,7 +374,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickStartDate,
                       icon: const Icon(Icons.event),
-                      label: Text('Start: ${_formatDate(_startDate)}'),
+                      label: Text('${tr('start')}: ${_formatDate(context, _startDate)}'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -376,7 +382,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickEndDate,
                       icon: const Icon(Icons.event_available),
-                      label: Text('End: ${_formatDate(_endDate)}'),
+                      label: Text('${tr('end')}: ${_formatDate(context, _endDate)}'),
                     ),
                   ),
                 ],
@@ -385,16 +391,16 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               OutlinedButton.icon(
                 onPressed: _pickTime,
                 icon: const Icon(Icons.access_time),
-                label: Text('Time: ${_formatTime(_time)}'),
+                label: Text('${tr('time')}: ${_formatTime(context, _time)}'),
               ),
               const SizedBox(height: 12),
               if (_isCaregiver) ...[
                 DropdownButtonFormField<String>(
                   value: _selectedRelation,
-                  decoration: const InputDecoration(
-                    labelText: 'Select Relation',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.family_restroom_outlined),
+                  decoration: InputDecoration(
+                    labelText: tr('select_relation'),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.family_restroom_outlined),
                   ),
                   items: relations
                       .map(
@@ -415,10 +421,10 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: selectedPatientInView,
-                  decoration: const InputDecoration(
-                    labelText: 'Select Patient',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.person_outline),
+                  decoration: InputDecoration(
+                    labelText: tr('select_patient'),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.person_outline),
                   ),
                   items: patients
                       .map(
@@ -427,7 +433,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                           child: Text(
                             p['email']?.toString() ??
                                 p['displayName']?.toString() ??
-                                'Patient',
+                                tr('patient'),
                           ),
                         ),
                       )
@@ -439,18 +445,18 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               ],
               DropdownButtonFormField<String>(
                 value: _mealType,
-                decoration: const InputDecoration(
-                  labelText: 'Meal Type',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.restaurant_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('meal_type'),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.restaurant_outlined),
                 ),
-                items: const [
+                items: [
                   DropdownMenuItem(
                     value: 'Breakfast',
-                    child: Text('Breakfast'),
+                    child: Text(tr('breakfast')),
                   ),
-                  DropdownMenuItem(value: 'Lunch', child: Text('Lunch')),
-                  DropdownMenuItem(value: 'Dinner', child: Text('Dinner')),
+                  DropdownMenuItem(value: 'Lunch', child: Text(tr('lunch'))),
+                  DropdownMenuItem(value: 'Dinner', child: Text(tr('dinner'))),
                 ],
                 onChanged: (value) {
                   if (value == null) return;
@@ -460,19 +466,19 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _mealRelation,
-                decoration: const InputDecoration(
-                  labelText: 'Meal Relation',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.accessibility_new_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('meal_relation'),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.accessibility_new_outlined),
                 ),
-                items: const [
+                items: [
                   DropdownMenuItem(
                     value: 'Before Meal',
-                    child: Text('Before Meal'),
+                    child: Text(tr('before_meal')),
                   ),
                   DropdownMenuItem(
                     value: 'After Meal',
-                    child: Text('After Meal'),
+                    child: Text(tr('after_meal')),
                   ),
                 ],
                 onChanged: (value) {
@@ -499,7 +505,8 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                         ),
                       )
                     : const Icon(Icons.save),
-                label: Text(_isSaving ? 'Saving...' : 'Save Medicine'),
+                label:
+                    Text(_isSaving ? tr('saving') : tr('save_medicine')),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(
@@ -510,7 +517,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 icon: const Icon(Icons.playlist_add_outlined),
-                label: const Text('Save & Add Another'),
+                label: Text(tr('save_and_add_another')),
               ),
             ],
           ),

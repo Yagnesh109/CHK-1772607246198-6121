@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -61,12 +62,12 @@ class _MedicineScreenState extends State<MedicineScreen> {
             children: [
               ListTile(
                 leading: const Icon(Icons.camera_alt_outlined),
-                title: const Text("Scan with camera"),
+                title: Text(tr('scan_with_camera')),
                 onTap: () => Navigator.of(context).pop(ScanSource.camera),
               ),
               ListTile(
                 leading: const Icon(Icons.image_outlined),
-                title: const Text("Pick from gallery"),
+                title: Text(tr('pick_from_gallery')),
                 onTap: () => Navigator.of(context).pop(ScanSource.gallery),
               ),
             ],
@@ -90,7 +91,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text("No barcode detected.")));
+        ).showSnackBar(SnackBar(content: Text(tr('no_barcode_detected'))));
       }
       return;
     }
@@ -144,7 +145,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Medicine Search")),
+      appBar: AppBar(title: Text(tr('medicine_search'))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -169,9 +170,9 @@ class _MedicineScreenState extends State<MedicineScreen> {
           children: [
             TextField(
               controller: controller,
-              decoration: const InputDecoration(
-                labelText: "Enter medicine name",
-                prefixIcon: Icon(Icons.search),
+              decoration: InputDecoration(
+                labelText: tr('enter_medicine_name'),
+                prefixIcon: const Icon(Icons.search),
               ),
             ),
             const SizedBox(height: 12),
@@ -187,7 +188,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.search),
-                    label: Text(_loading ? "Searching..." : "Search"),
+                    label: Text(_loading ? tr('searching') : tr('search')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -195,7 +196,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _scanBarcode,
                     icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text("Scan Barcode"),
+                    label: Text(tr('scan_barcode')),
                   ),
                 ),
               ],
@@ -247,7 +248,7 @@ class _MedicineScreenState extends State<MedicineScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        brand?.isNotEmpty == true ? brand! : "Unknown medicine",
+                        brand?.isNotEmpty == true ? brand! : tr('unknown_medicine'),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -268,18 +269,18 @@ class _MedicineScreenState extends State<MedicineScreen> {
               ],
             ),
             const SizedBox(height: 14),
-            _infoRow(Icons.info_outline, usage, 'Usage not available'),
+            _infoRow(Icons.info_outline, usage, tr('usage_not_available')),
             const SizedBox(height: 10),
             _infoRow(
               Icons.medication_liquid_outlined,
               dosage,
-              'Dosage not available',
+              tr('dosage_not_available'),
             ),
             const SizedBox(height: 10),
             _infoRow(
               Icons.warning_amber_outlined,
               sideEffects,
-              'Side effects not available',
+              tr('side_effects_not_available'),
             ),
           ],
         ),
@@ -288,11 +289,11 @@ class _MedicineScreenState extends State<MedicineScreen> {
   }
 
   Widget _disclaimer() {
-    return const Padding(
-      padding: EdgeInsets.only(top: 12),
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
       child: Text(
-        "Note: This tool can make mistakes. Please verify medicine details.",
-        style: TextStyle(color: Colors.blueGrey, fontSize: 12),
+        tr('disclaimer_note'),
+        style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
         textAlign: TextAlign.center,
       ),
     );

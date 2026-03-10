@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../features/secure/data/secure_store_service.dart';
 
@@ -7,7 +8,9 @@ class SettingsPage extends StatelessWidget {
   Future<void> _switchRole(BuildContext context, String role) async {
     final res = await SecureStoreService.setUserRole(role);
     if (context.mounted) {
-      final msg = res['error']?.toString() ?? 'Switched to $role';
+      final msg =
+          res['error']?.toString() ??
+          tr('switched_role', namedArgs: {'role': role});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
@@ -18,14 +21,14 @@ class SettingsPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D47A1),
         centerTitle: true,
-        title: const Text('Settings'),
+        title: Text(tr('settings')),
       ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Text(
-            'Roles',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          Text(
+            tr('roles'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           Row(
@@ -33,28 +36,56 @@ class SettingsPage extends StatelessWidget {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => _switchRole(context, 'Patient'),
-                  child: const Text('Switch to Patient'),
+                  child: Text(tr('switch_patient')),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => _switchRole(context, 'Caregiver'),
-                  child: const Text('Switch to Caregiver'),
+                  child: Text(tr('switch_caregiver')),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 20),
-          const Text(
-            'About',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          Text(
+            tr('language'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('App Version'),
-            subtitle: Text('1.0.0'),
+          Column(
+            children: [
+              RadioListTile<String>(
+                value: 'en',
+                groupValue: context.locale.languageCode,
+                onChanged: (code) => context.setLocale(Locale(code ?? 'en')),
+                title: Text(tr('english')),
+              ),
+              RadioListTile<String>(
+                value: 'hi',
+                groupValue: context.locale.languageCode,
+                onChanged: (code) => context.setLocale(Locale(code ?? 'hi')),
+                title: Text(tr('hindi')),
+              ),
+              RadioListTile<String>(
+                value: 'mr',
+                groupValue: context.locale.languageCode,
+                onChanged: (code) => context.setLocale(Locale(code ?? 'mr')),
+                title: Text(tr('marathi')),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            tr('about'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: Text(tr('app_version')),
+            subtitle: const Text('1.0.0'),
           ),
         ],
       ),

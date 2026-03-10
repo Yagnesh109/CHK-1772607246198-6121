@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -10,6 +11,7 @@ import '../pages/doctor_requests_page.dart';
 import '../pages/medicine_history_page.dart';
 import '../pages/profile_page.dart';
 import '../pages/settings_page.dart';
+import '../pages/side_effect_checker_page.dart';
 
 class AppSidebar extends StatelessWidget {
   const AppSidebar({super.key});
@@ -33,7 +35,7 @@ class AppSidebar extends StatelessWidget {
         padding: EdgeInsets.zero,
         children: [
           UserAccountsDrawerHeader(
-            accountName: Text(user?.displayName ?? 'MediMind User'),
+            accountName: Text(user?.displayName ?? tr('default_user_name')),
             accountEmail: Text(user?.email ?? ''),
             currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
@@ -51,7 +53,7 @@ class AppSidebar extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.medication_outlined),
-            title: const Text('Medicine Search'),
+            title: Text(tr('medicine_search')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(
@@ -61,7 +63,7 @@ class AppSidebar extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.person_outline),
-            title: const Text('Profile'),
+            title: Text(tr('profile')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(
@@ -71,7 +73,7 @@ class AppSidebar extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.add_box_outlined),
-            title: const Text('Add Medicine'),
+            title: Text(tr('add_medicine')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(context).push(
@@ -84,7 +86,7 @@ class AppSidebar extends StatelessWidget {
               (SecureStoreService.getCachedRole() == 'Patient'))
             ListTile(
               leading: const Icon(Icons.history_outlined),
-              title: const Text('Medicine History'),
+              title: Text(tr('medicine_history')),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
@@ -97,7 +99,7 @@ class AppSidebar extends StatelessWidget {
           if (SecureStoreService.getCachedRole() == 'Doctor')
             ListTile(
               leading: const Icon(Icons.mail_outline),
-              title: const Text('Patient Requests'),
+              title: Text(tr('patient_requests')),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
@@ -105,10 +107,20 @@ class AppSidebar extends StatelessWidget {
                 );
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.warning_amber_outlined),
+            title: Text(tr('side_effect_analyzer')),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => SideEffectCheckerPage()),
+              );
+            },
+          ),
           if (SecureStoreService.getCachedRole() == 'Patient')
             ListTile(
               leading: const Icon(Icons.chat_outlined),
-              title: const Text('Consult Doctor'),
+              title: Text(tr('consult_doctor')),
               onTap: () {
                 Navigator.of(context).pop();
                 Navigator.of(context).push(
@@ -118,7 +130,7 @@ class AppSidebar extends StatelessWidget {
             ),
           ListTile(
             leading: const Icon(Icons.settings_outlined),
-            title: const Text('Settings'),
+            title: Text(tr('settings')),
             onTap: () {
               Navigator.of(context).pop();
               Navigator.of(
@@ -129,7 +141,7 @@ class AppSidebar extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
+            title: Text(tr('logout')),
             onTap: () => _logout(context),
           ),
         ],
