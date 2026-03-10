@@ -37,6 +37,9 @@ serviceAccountKey.json
 **/secrets.*
 **/.secrets/
 **/keys/
+**/*secret*.txt
+**/*token*.txt
+**/*private_key*
 backend/serviceAccountKey.json
 backend/serviceAccountKey*.json
 medicine_app/android/app/google-services.json

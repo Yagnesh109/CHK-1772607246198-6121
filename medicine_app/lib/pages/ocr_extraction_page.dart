@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import '../features/ocr/gemini_prescription_service.dart';
 import '../features/secure/data/secure_store_service.dart';
 
 class OcrExtractionPage extends StatefulWidget {
@@ -15,9 +14,6 @@ class OcrExtractionPage extends StatefulWidget {
 }
 
 class _OcrExtractionPageState extends State<OcrExtractionPage> {
-  static const String _host =
-      "backend-medicine-app-sveri-hackathon.onrender.com";
-
   final _formKey = GlobalKey<FormState>();
   final _medicineNameController = TextEditingController();
   final _dosageController = TextEditingController();
@@ -155,12 +151,17 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
 
   TimeOfDay? _parseTime(String? value) {
     if (value == null || value.trim().isEmpty) return null;
-    final raw = value.trim();
-    final parts = raw.split(':');
-    if (parts.length != 2) return null;
-    final hour = int.tryParse(parts[0]);
-    final minute = int.tryParse(parts[1]);
+    final input = value.trim().toUpperCase();
+    final match = RegExp(
+      r'^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$',
+    ).firstMatch(input);
+    if (match == null) return null;
+    var hour = int.tryParse(match.group(1)!);
+    final minute = int.tryParse(match.group(2)!);
+    final meridiem = match.group(3);
     if (hour == null || minute == null) return null;
+    if (meridiem == 'PM' && hour != 12) hour += 12;
+    if (meridiem == 'AM' && hour == 12) hour = 0;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
     return TimeOfDay(hour: hour, minute: minute);
   }
@@ -173,59 +174,28 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
       return;
     }
 
+    if (!GeminiPrescriptionService.instance.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add GEMINI_API_KEY to .env before running OCR.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isExtracting = true);
     try {
-      final uri = Uri.https(_host, "/medicine/extract-ocr");
-      final request = http.MultipartRequest('POST', uri);
-      request.files.add(
-        await http.MultipartFile.fromPath('file', _selectedImage!.path),
-      );
-
-      final streamed = await request.send();
-      final response = await http.Response.fromStream(streamed);
-
+      final extraction = await GeminiPrescriptionService.instance
+          .extractFromImagePath(_selectedImage!.path);
+      final items = _mapExtractionToItems(extraction);
+      if (items.isEmpty) {
+        throw Exception('No medicines detected in the image.');
+      }
       if (!mounted) return;
-
-      Map<String, dynamic> body;
-      try {
-        body = jsonDecode(response.body) as Map<String, dynamic>;
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'OCR extraction failed (${response.statusCode}): Invalid response format.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      if (response.statusCode != 200 || body['error'] != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              body['error']?.toString() ??
-                  'OCR extraction failed (${response.statusCode}).',
-            ),
-          ),
-        );
-        return;
-      }
-
-      final items = (body['items'] as List?) ?? [];
-      if (items.isNotEmpty) {
-        _extractedItems = items
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        _applyExtracted(_extractedItems.first);
-      } else {
-        _extractedItems = [];
-        _applyExtracted(body);
-      }
-
-      setState(() {});
-
+      setState(() {
+        _extractedItems = items;
+        _applyExtracted(items.first);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Extraction complete. Please verify fields.'),
@@ -248,6 +218,78 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
     } finally {
       if (mounted) setState(() => _isExtracting = false);
     }
+  }
+
+  List<Map<String, dynamic>> _mapExtractionToItems(
+    PrescriptionExtraction extraction,
+  ) {
+    final items = <Map<String, dynamic>>[];
+    for (final med in extraction.medicines) {
+      items.add(_toUiItem(med, extraction));
+    }
+    if (items.isEmpty) {
+      items.add(_fallbackFromRawText(extraction.rawText));
+    }
+    return items;
+  }
+
+  Map<String, dynamic> _toUiItem(
+    PrescriptionMedicine medicine,
+    PrescriptionExtraction extraction,
+  ) {
+    final timingText = medicine.timing.isNotEmpty ? medicine.timing.first : '';
+    return {
+      'medicineName': medicine.name,
+      'dosage': medicine.dosage,
+      'time': timingText,
+      'startDate': extraction.startDateText,
+      'endDate': extraction.endDateText,
+      'mealType': _mealType,
+      'mealRelation': _mealRelation,
+    };
+  }
+
+  Map<String, dynamic> _fallbackFromRawText(String text) {
+    final normalized = text.replaceAll('\r', '');
+    final lines = normalized
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    final dosageMatch = RegExp(
+      r'\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|iu|units?|tablet|tab|capsule|cap|drops?)\b',
+      caseSensitive: false,
+    ).firstMatch(normalized);
+    final timeMatch = RegExp(
+      r'\b\d{1,2}:\d{2}\s*(?:AM|PM)?\b',
+      caseSensitive: false,
+    ).firstMatch(normalized);
+
+    String name = '';
+    for (final line in lines) {
+      if (line.toLowerCase().startsWith('rx')) continue;
+      if (line.toLowerCase().contains('patient')) continue;
+      if (line.toLowerCase().contains('doctor')) continue;
+      final cleaned = line
+          .replaceAll(RegExp(r'[^A-Za-z0-9\s\-]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      if (cleaned.length >= 3) {
+        name = cleaned;
+        break;
+      }
+    }
+
+    return {
+      'medicineName': name.isNotEmpty ? name : 'Medicine',
+      'dosage': dosageMatch?.group(0)?.trim() ?? '',
+      'time': timeMatch?.group(0)?.trim() ?? '',
+      'startDate': '',
+      'endDate': '',
+      'mealType': _mealType,
+      'mealRelation': _mealRelation,
+    };
   }
 
   Future<void> _pickStartDate() async {
@@ -415,242 +457,373 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF87CEEB),
+        backgroundColor: const Color(0xFF0D47A1),
         centerTitle: true,
         title: const Text('OCR Extraction'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _showImageSourceChooser,
-                  icon: const Icon(Icons.add_a_photo_outlined),
-                  label: const Text('Capture / Upload Image'),
+          child: Column(
+            children: [
+              _heroCard(),
+              const SizedBox(height: 12),
+              _captureCard(),
+              const SizedBox(height: 12),
+              _extractedList(),
+              const SizedBox(height: 12),
+              _formCard(relations, visiblePatients, selectedPatientInView),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _heroCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text(
+            'Scan or Upload Prescription',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          SizedBox(height: 6),
+          Text(
+            'We will auto-fill medicine details. Review and save.',
+            style: TextStyle(color: Colors.white70, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _captureCard() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _showImageSourceChooser,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: const Text('Capture / Upload Image'),
+            ),
+            const SizedBox(height: 8),
+            if (_selectedImage != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  File(_selectedImage!.path),
+                  height: 180,
+                  fit: BoxFit.cover,
                 ),
-                const SizedBox(height: 8),
-                if (_selectedImage != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(_selectedImage!.path),
-                      height: 180,
-                      fit: BoxFit.cover,
-                    ),
+              ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: _isExtracting ? null : _extractUsingGemini,
+              icon: _isExtracting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.document_scanner_outlined),
+              label: Text(_isExtracting ? 'Reading...' : 'Upload & Extract'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _extractedList() {
+    if (_extractedItems.isEmpty) return const SizedBox.shrink();
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Extracted medicines (tap Apply):',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _extractedItems.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final item = _extractedItems[index];
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                const SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: _isExtracting ? null : _extractUsingGemini,
-                  child: _isExtracting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Upload & Extract'),
-                ),
-                if (_extractedItems.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Extracted medicines (tap Apply to edit/save):',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _extractedItems.length,
-                    separatorBuilder: (_, i) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final item = _extractedItems[index];
-                      return Card(
-                        child: ListTile(
-                          title: Text(
-                            item['medicineName']?.toString().isNotEmpty == true
-                                ? item['medicineName'].toString()
-                                : 'Medicine ${index + 1}',
-                          ),
-                          subtitle: Text(
-                            'Dosage: ${item['dosage']?.toString() ?? '-'}'
-                            '\nTime: ${item['time']?.toString() ?? '-'}'
-                            '\nDates: ${item['startDate'] ?? ''} - ${item['endDate'] ?? ''}',
-                          ),
-                          trailing: TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _applyExtracted(item);
-                              });
-                            },
-                            child: const Text('Apply'),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _medicineNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Medicine Name',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Required'
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _dosageController,
-                  decoration: const InputDecoration(
-                    labelText: 'Dosage',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) => (value == null || value.trim().isEmpty)
-                      ? 'Required'
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _pickStartDate,
-                        child: Text('Start: ${_formatDate(_startDate)}'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _pickEndDate,
-                        child: Text('End: ${_formatDate(_endDate)}'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: _pickTime,
-                  child: Text('Time: ${_formatTime(_time)}'),
-                ),
-                const SizedBox(height: 12),
-                if (_isCaregiver)
-                  Column(
+                  child: Row(
                     children: [
-                      DropdownButtonFormField<String>(
-                        value: _selectedRelation,
-                        decoration: const InputDecoration(
-                          labelText: 'Select Relation',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: relations
-                            .map(
-                              (relation) => DropdownMenuItem<String>(
-                                value: relation,
-                                child: Text(relation),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['medicineName']?.toString().isNotEmpty ==
+                                      true
+                                  ? item['medicineName'].toString()
+                                  : 'Medicine ${index + 1}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
                               ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedRelation = value;
-                            _selectedPatientId = null;
-                            _syncCaregiverSelection();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: selectedPatientInView,
-                        decoration: const InputDecoration(
-                          labelText: 'Select Patient',
-                          border: OutlineInputBorder(),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Dosage: ${item['dosage'] ?? '-'} • Time: ${item['time'] ?? '-'}',
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                            Text(
+                              'Dates: ${item['startDate'] ?? '-'} - ${item['endDate'] ?? '-'}',
+                              style: const TextStyle(color: Colors.black45),
+                            ),
+                          ],
                         ),
-                        items: visiblePatients
-                            .map(
-                              (p) => DropdownMenuItem<String>(
-                                value: p['userId']?.toString(),
-                                child: Text(
-                                  p['email']?.toString() ??
-                                      p['displayName']?.toString() ??
-                                      'Patient',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() => _selectedPatientId = value);
-                        },
                       ),
-                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () {
+                          setState(() => _applyExtracted(item));
+                        },
+                        child: const Text('Apply'),
+                      ),
                     ],
                   ),
-                DropdownButtonFormField<String>(
-                  value: _mealType,
-                  decoration: const InputDecoration(
-                    labelText: 'Meal Type',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Breakfast',
-                      child: Text('Breakfast'),
-                    ),
-                    DropdownMenuItem(value: 'Lunch', child: Text('Lunch')),
-                    DropdownMenuItem(value: 'Dinner', child: Text('Dinner')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _mealType = value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _mealRelation,
-                  decoration: const InputDecoration(
-                    labelText: 'Meal Relation',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'Before Meal',
-                      child: Text('Before Meal'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'After Meal',
-                      child: Text('After Meal'),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) setState(() => _mealRelation = value);
-                  },
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: _isSaving
-                      ? null
-                      : () => _saveMedicine(addAnother: false),
-                  child: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save Medicine'),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton(
-                  onPressed: _isSaving
-                      ? null
-                      : () => _saveMedicine(addAnother: true),
-                  child: const Text('Save and Add Medicine'),
-                ),
-              ],
+                );
+              },
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _formCard(
+    List<String> relations,
+    List<Map<String, dynamic>> patients,
+    String? selectedPatientInView,
+  ) {
+    final relationsWidget = !_isCaregiver
+        ? const SizedBox.shrink()
+        : Column(
+            children: [
+              DropdownButtonFormField<String>(
+                value: _selectedRelation,
+                decoration: const InputDecoration(
+                  labelText: 'Select Relation',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.family_restroom_outlined),
+                ),
+                items: relations
+                    .map(
+                      (relation) => DropdownMenuItem<String>(
+                        value: relation,
+                        child: Text(relation),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedRelation = value;
+                    _selectedPatientId = null;
+                    _syncCaregiverSelection();
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedPatientInView,
+                decoration: const InputDecoration(
+                  labelText: 'Select Patient',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                items: patients
+                    .map(
+                      (p) => DropdownMenuItem<String>(
+                        value: p['userId']?.toString(),
+                        child: Text(
+                          p['email']?.toString() ??
+                              p['displayName']?.toString() ??
+                              'Patient',
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => _selectedPatientId = value),
+              ),
+              const SizedBox(height: 12),
+            ],
+          );
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextFormField(
+                controller: _medicineNameController,
+                decoration: const InputDecoration(
+                  labelText: 'Medicine Name',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.medication_outlined),
+                ),
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _dosageController,
+                decoration: const InputDecoration(
+                  labelText: 'Dosage',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.science_outlined),
+                ),
+                validator: (value) =>
+                    value == null || value.trim().isEmpty ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickStartDate,
+                      icon: const Icon(Icons.event),
+                      label: Text('Start: ${_formatDate(_startDate)}'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickEndDate,
+                      icon: const Icon(Icons.event_available),
+                      label: Text('End: ${_formatDate(_endDate)}'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _pickTime,
+                icon: const Icon(Icons.access_time),
+                label: Text('Time: ${_formatTime(_time)}'),
+              ),
+              const SizedBox(height: 12),
+              relationsWidget,
+              DropdownButtonFormField<String>(
+                value: _mealType,
+                decoration: const InputDecoration(
+                  labelText: 'Meal Type',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.restaurant_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Breakfast',
+                    child: Text('Breakfast'),
+                  ),
+                  DropdownMenuItem(value: 'Lunch', child: Text('Lunch')),
+                  DropdownMenuItem(value: 'Dinner', child: Text('Dinner')),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _mealType = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _mealRelation,
+                decoration: const InputDecoration(
+                  labelText: 'Meal Relation',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.accessibility_new_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'Before Meal',
+                    child: Text('Before Meal'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'After Meal',
+                    child: Text('After Meal'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) setState(() => _mealRelation = value);
+                },
+              ),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                onPressed: _isSaving
+                    ? null
+                    : () => _saveMedicine(addAnother: false),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  backgroundColor: const Color(0xFF0D47A1),
+                ),
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(_isSaving ? 'Saving...' : 'Save Medicine'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _isSaving
+                    ? null
+                    : () => _saveMedicine(addAnother: true),
+                icon: const Icon(Icons.playlist_add_outlined),
+                label: const Text('Save and Add Medicine'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ],
           ),
         ),
       ),

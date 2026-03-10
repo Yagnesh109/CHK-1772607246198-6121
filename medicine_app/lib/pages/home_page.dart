@@ -17,6 +17,14 @@ class _HomePageState extends State<HomePage> {
     return SecureStoreService.getUserProfile();
   }
 
+  String _greetingText() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 16) return 'Good afternoon';
+    if (hour >= 16 && hour < 21) return 'Good evening';
+    return 'Good night';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,9 +57,12 @@ class _HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 8),
-                const Text(
-                  'Welcome to MediMind',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                Text(
+                  _greetingText(),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -430,8 +441,24 @@ class _PatientPendingMedicinesSectionState
   @override
   Widget build(BuildContext context) {
     final pendingItems = _items
-        .where((item) => (item['status']?.toString().trim() ?? '') == 'Pending')
+        .where(
+          (item) =>
+              (item['status']?.toString().toLowerCase().trim() ?? '') ==
+              'pending',
+        )
         .toList();
+    final today = DateTime.now();
+    final weekday = const [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ][today.weekday - 1];
+    final dateLabel =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
@@ -439,84 +466,172 @@ class _PatientPendingMedicinesSectionState
     if (_error != null) {
       return Text('Pending medicine load failed: $_error');
     }
-    if (pendingItems.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Today Pending Medicines Count: $_pendingCount',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'No pending medicines for today.',
-            textAlign: TextAlign.center,
-          ),
-        ],
-      );
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Today Pending Medicines Count: $_pendingCount',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        _StatCard(
+          title: "Today's Medicines",
+          subtitle: '$weekday, $dateLabel',
+          value: _items.length.toString(),
+          accent: Colors.blue.shade700,
+          accentLight: Colors.blue.shade50,
         ),
-        const SizedBox(height: 6),
-        const Text(
-          'Pending medicines to take today',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        ),
-        const SizedBox(height: 10),
-        for (final item in pendingItems) ...[
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item['medicineName']?.toString() ?? 'Medicine',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Time: ${_formatTime(item['timeHour'], item['timeMinute'])}',
-                        ),
-                        Text('Dosage: ${item['dosage']?.toString() ?? '-'}'),
-                      ],
-                    ),
-                  ),
-                  if (item['canTakeNow'] == true)
-                    ElevatedButton(
-                      onPressed: _taking
-                          ? null
-                          : () => _markTaken(
-                              item['medicineId']?.toString() ?? '',
-                            ),
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(64, 34),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                      ),
-                      child: const Text('Taken'),
-                    ),
-                ],
+        const SizedBox(height: 12),
+        if (_items.isEmpty)
+          const Text(
+            'No medicines scheduled for today.',
+            textAlign: TextAlign.center,
+          )
+        else
+          ..._items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SinglePendingCard(
+                item: item,
+                formatTime: _formatTime,
+                taking: _taking,
+                onTaken: () => _markTaken(item['medicineId']?.toString() ?? ''),
               ),
             ),
           ),
-          const SizedBox(height: 8),
-        ],
       ],
     );
+  }
+}
+
+class _SinglePendingCard extends StatelessWidget {
+  const _SinglePendingCard({
+    required this.item,
+    required this.formatTime,
+    required this.taking,
+    required this.onTaken,
+  });
+
+  final Map<String, dynamic> item;
+  final String Function(dynamic, dynamic) formatTime;
+  final bool taking;
+  final VoidCallback onTaken;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['medicineName']?.toString() ?? 'Medicine',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Time: ${formatTime(item['timeHour'], item['timeMinute'])}',
+                  ),
+                  Text('Dosage: ${item['dosage']?.toString() ?? '-'}'),
+                ],
+              ),
+            ),
+            if (item['canTakeNow'] == true)
+              ElevatedButton(
+                onPressed: taking ? null : onTaken,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(72, 36),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                child: const Text('Taken'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.accent,
+    required this.accentLight,
+  });
+
+  final String title;
+  final String? subtitle;
+  final String value;
+  final Color accent;
+  final Color accentLight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: accentLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withOpacity(0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: accent,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle!,
+              style: TextStyle(
+                color: accent.withOpacity(0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              color: accent,
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeatureChips extends StatelessWidget {
+  const _FeatureChips();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.shrink();
   }
 }

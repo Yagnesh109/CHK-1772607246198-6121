@@ -13,6 +13,12 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _doctorCodeController = TextEditingController();
+  final TextEditingController _weightController = TextEditingController();
+  final TextEditingController _heightController = TextEditingController();
+  final TextEditingController _allergiesController = TextEditingController();
+  String _gender = '';
+  DateTime? _dob;
+
   bool _isLoading = false;
   bool _isSaving = false;
   bool _sending = false;
@@ -29,6 +35,9 @@ class _ProfilePageState extends State<ProfilePage> {
   void dispose() {
     _phoneController.dispose();
     _doctorCodeController.dispose();
+    _weightController.dispose();
+    _heightController.dispose();
+    _allergiesController.dispose();
     super.dispose();
   }
 
@@ -39,6 +48,14 @@ class _ProfilePageState extends State<ProfilePage> {
       if (!mounted) return;
       _phoneController.text = profile['phoneNumber']?.toString() ?? '';
       _role = profile['role']?.toString().trim() ?? '';
+      _gender = profile['gender']?.toString().trim() ?? '';
+      _weightController.text = profile['weightKg']?.toString() ?? '';
+      _heightController.text = profile['heightCm']?.toString() ?? '';
+      _allergiesController.text = profile['allergies']?.toString() ?? '';
+      final rawDob = profile['dob']?.toString() ?? '';
+      if (rawDob.isNotEmpty) {
+        _dob = DateTime.tryParse(rawDob);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -69,6 +86,228 @@ class _ProfilePageState extends State<ProfilePage> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  Widget _bmiCard() {
+    final bmi = _calculateBmi();
+    final color = bmi == null ? Colors.blueGrey : _bmiColor(bmi);
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'BMI',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      bmi == null
+                          ? 'Add weight & height'
+                          : '${bmi.toStringAsFixed(1)} (${_bmiCategory(bmi)})',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                Icon(Icons.favorite, color: color, size: 28),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (bmi != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  minHeight: 10,
+                  value: _bmiProgress(bmi),
+                  backgroundColor: Colors.grey.shade300,
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              )
+            else
+              Text(
+                'Enter weight (kg) and height (cm) to see BMI.',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _profileForm() {
+    final age = _age();
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Health Details',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Mobile Number',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.phone_android_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _gender.isEmpty ? null : _gender,
+              decoration: const InputDecoration(
+                labelText: 'Gender',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'Male', child: Text('Male')),
+                DropdownMenuItem(value: 'Female', child: Text('Female')),
+                DropdownMenuItem(value: 'Other', child: Text('Other')),
+              ],
+              onChanged: (value) => setState(() => _gender = value ?? ''),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _pickDob,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Date of Birth',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.cake_outlined),
+                ),
+                child: Text(
+                  _dob == null
+                      ? 'Tap to select'
+                      : '${_dob!.day.toString().padLeft(2, '0')}-${_dob!.month.toString().padLeft(2, '0')}-${_dob!.year}',
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              readOnly: true,
+              decoration: InputDecoration(
+                labelText: 'Age',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.calendar_today_outlined),
+                hintText: 'Not set',
+                suffixText: age == null ? '' : 'years',
+              ),
+              controller: TextEditingController(
+                text: age == null ? '' : age.toString(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _weightController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Weight (kg)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.monitor_weight_outlined),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _heightController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Height (cm)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.height_outlined),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _allergiesController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Allergies',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.warning_amber_outlined),
+                hintText: 'e.g. Penicillin, peanuts, dust',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double? _calculateBmi() {
+    final weight = double.tryParse(_weightController.text.trim());
+    final heightCm = double.tryParse(_heightController.text.trim());
+    if (weight == null || heightCm == null || weight <= 0 || heightCm <= 0) {
+      return null;
+    }
+    final heightM = heightCm / 100;
+    return weight / (heightM * heightM);
+  }
+
+  String _bmiCategory(double bmi) {
+    if (bmi < 18.5) return 'Underweight';
+    if (bmi < 25) return 'Normal';
+    if (bmi < 30) return 'Overweight';
+    return 'Obese';
+  }
+
+  Color _bmiColor(double bmi) {
+    if (bmi < 18.5) return const Color(0xFF42A5F5);
+    if (bmi < 25) return const Color(0xFF43A047);
+    if (bmi < 30) return const Color(0xFFF9A825);
+    return const Color(0xFFE53935);
+  }
+
+  double _bmiProgress(double bmi) {
+    final normalized = (bmi - 12) / 28;
+    return normalized.clamp(0.0, 1.0);
+  }
+
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _dob ?? DateTime(now.year - 25, now.month, now.day),
+      firstDate: DateTime(now.year - 110),
+      lastDate: now,
+    );
+    if (selected == null) return;
+    setState(() => _dob = selected);
+  }
+
+  int? _age() {
+    if (_dob == null) return null;
+    final now = DateTime.now();
+    var years = now.year - _dob!.year;
+    if (DateTime(now.year, _dob!.month, _dob!.day).isAfter(now)) {
+      years--;
+    }
+    return years < 0 ? null : years;
   }
 
   Future<void> _sendRequestToDoctor() async {
@@ -170,6 +409,22 @@ class _ProfilePageState extends State<ProfilePage> {
                 style: const TextStyle(fontSize: 14, color: Colors.black54),
               ),
               const SizedBox(height: 24),
+              _bmiCard(),
+              const SizedBox(height: 16),
+              _profileForm(),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _isSaving ? null : _savePhone,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_isSaving ? 'Saving...' : 'Save'),
+              ),
+              const SizedBox(height: 24),
               if (_role == 'Patient') ...[
                 TextField(
                   controller: _doctorCodeController,
@@ -193,25 +448,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 Text(_requestStatus, style: const TextStyle(fontSize: 14)),
                 const SizedBox(height: 20),
               ],
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Mobile Number',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _isSaving ? null : _savePhone,
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save Mobile Number'),
-              ),
               if (_isLoading)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
