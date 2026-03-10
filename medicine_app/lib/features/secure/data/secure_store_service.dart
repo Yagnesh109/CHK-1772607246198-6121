@@ -6,6 +6,9 @@ import 'package:http/http.dart' as http;
 class SecureStoreService {
   static const String _host =
       "backend-medicine-app-sveri-hackathon.onrender.com";
+  static String? _cachedRole;
+
+  static String? getCachedRole() => _cachedRole;
 
   static Future<Map<String, dynamic>> _authorizedGet(String path) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -44,6 +47,21 @@ class SecureStoreService {
     return _decodeResponse(res);
   }
 
+  static Future<Map<String, dynamic>> _authorizedDelete(String path) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return {"error": "User not logged in."};
+    }
+
+    final token = await user.getIdToken(true);
+    final uri = Uri.https(_host, path);
+    final res = await http.delete(
+      uri,
+      headers: {"Authorization": "Bearer $token"},
+    );
+    return _decodeResponse(res);
+  }
+
   static Map<String, dynamic> _decodeResponse(http.Response res) {
     try {
       final parsed = jsonDecode(res.body) as Map<String, dynamic>;
@@ -59,8 +77,12 @@ class SecureStoreService {
     }
   }
 
-  static Future<Map<String, dynamic>> getUserProfile() {
-    return _authorizedGet("/secure/user/profile");
+  static Future<Map<String, dynamic>> getUserProfile() async {
+    final res = await _authorizedGet("/secure/user/profile");
+    if (res['error'] == null) {
+      _cachedRole = res['role']?.toString().trim();
+    }
+    return res;
   }
 
   static Future<Map<String, dynamic>> setUserRole(String role) {
@@ -75,5 +97,49 @@ class SecureStoreService {
     Map<String, dynamic> payload,
   ) {
     return _authorizedPost("/secure/medicine", payload);
+  }
+
+  static Future<Map<String, dynamic>> addPatientForCaregiver({
+    required String patientEmail,
+    required String patientPhoneNumber,
+    required String patientRelation,
+  }) {
+    return _authorizedPost("/secure/caregiver/patients", {
+      "patientEmail": patientEmail,
+      "patientPhoneNumber": patientPhoneNumber,
+      "patientRelation": patientRelation,
+    });
+  }
+
+  static Future<Map<String, dynamic>> getCaregiverPatients() {
+    return _authorizedGet("/secure/caregiver/patients");
+  }
+
+  static Future<Map<String, dynamic>> getMedicines() {
+    return _authorizedGet("/secure/medicines");
+  }
+
+  static Future<Map<String, dynamic>> getTodayPendingMedicines() {
+    return _authorizedGet("/secure/medicines/pending-today");
+  }
+
+  static Future<Map<String, dynamic>> getTodayMedicineSummary() {
+    return _authorizedGet("/secure/medicines/today-summary");
+  }
+
+  static Future<Map<String, dynamic>> markMedicineTaken(String medicineId) {
+    return _authorizedPost("/secure/medicines/$medicineId/taken", {});
+  }
+
+  static Future<Map<String, dynamic>> deleteMedicine(String medicineId) {
+    return _authorizedDelete("/secure/medicines/$medicineId");
+  }
+
+  static Future<Map<String, dynamic>> clearMedicineHistory() {
+    return _authorizedDelete("/secure/medicines/history");
+  }
+
+  static Future<Map<String, dynamic>> deleteCaregiverPatient(String patientId) {
+    return _authorizedDelete("/secure/caregiver/patients/$patientId");
   }
 }

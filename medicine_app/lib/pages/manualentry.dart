@@ -20,12 +20,88 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
   String _mealType = 'Breakfast';
   String _mealRelation = 'Before Meal';
   bool _isSaving = false;
+  bool _isCaregiver = false;
+  List<Map<String, dynamic>> _patients = [];
+  String? _selectedRelation;
+  String? _selectedPatientId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoleAndPatients();
+  }
 
   @override
   void dispose() {
     _medicineNameController.dispose();
     _dosageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRoleAndPatients() async {
+    final profile = await SecureStoreService.getUserProfile();
+    final role = profile['role']?.toString().trim();
+    if (role != 'Caregiver') return;
+
+    final patientsResponse = await SecureStoreService.getCaregiverPatients();
+    final items = (patientsResponse['items'] as List?) ?? [];
+    if (!mounted) return;
+    setState(() {
+      _isCaregiver = true;
+      _patients = items
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      _syncCaregiverSelection();
+    });
+  }
+
+  List<String> _caregiverRelations() {
+    final values = <String>[];
+    for (final patient in _patients) {
+      final relation = patient['relation']?.toString().trim() ?? '';
+      if (relation.isNotEmpty && !values.contains(relation)) {
+        values.add(relation);
+      }
+    }
+    return values;
+  }
+
+  List<Map<String, dynamic>> _patientsForSelectedRelation() {
+    if (_selectedRelation == null || _selectedRelation!.isEmpty) {
+      return _patients;
+    }
+    return _patients.where((patient) {
+      final relation = patient['relation']?.toString().trim() ?? '';
+      return relation == _selectedRelation;
+    }).toList();
+  }
+
+  void _syncCaregiverSelection() {
+    final relations = _caregiverRelations();
+    if (relations.isEmpty) {
+      _selectedRelation = null;
+      _selectedPatientId = null;
+      return;
+    }
+
+    if (_selectedRelation == null || !relations.contains(_selectedRelation)) {
+      _selectedRelation = relations.first;
+    }
+
+    final visiblePatients = _patientsForSelectedRelation();
+    if (visiblePatients.isEmpty) {
+      _selectedPatientId = null;
+      return;
+    }
+
+    final visibleIds = visiblePatients
+        .map((patient) => patient['userId']?.toString())
+        .whereType<String>()
+        .toList();
+    if (_selectedPatientId == null ||
+        !visibleIds.contains(_selectedPatientId)) {
+      _selectedPatientId = visibleIds.first;
+    }
   }
 
   Future<void> _pickStartDate() async {
@@ -114,6 +190,22 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       return;
     }
 
+    if (_isCaregiver &&
+        (_selectedRelation == null || _selectedRelation!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select relation.')));
+      return;
+    }
+
+    if (_isCaregiver &&
+        (_selectedPatientId == null || _selectedPatientId!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a patient.')));
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
       final response = await SecureStoreService.saveMedicine({
@@ -126,6 +218,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         'mealType': _mealType,
         'mealRelation': _mealRelation,
         'source': 'manual',
+        'targetPatientId': _isCaregiver ? _selectedPatientId : null,
       });
       if (response['error'] != null) {
         throw Exception(response['error'].toString());
@@ -164,6 +257,15 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final relations = _caregiverRelations();
+    final visiblePatients = _patientsForSelectedRelation();
+    final selectedPatientInView =
+        visiblePatients.any(
+          (patient) => patient['userId']?.toString() == _selectedPatientId,
+        )
+        ? _selectedPatientId
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF87CEEB),
@@ -229,6 +331,57 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                   child: Text('Time: ${_formatTime(_time)}'),
                 ),
                 const SizedBox(height: 12),
+                if (_isCaregiver)
+                  Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _selectedRelation,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Relation',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: relations
+                            .map(
+                              (relation) => DropdownMenuItem<String>(
+                                value: relation,
+                                child: Text(relation),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedRelation = value;
+                            _selectedPatientId = null;
+                            _syncCaregiverSelection();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedPatientInView,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Patient',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: visiblePatients
+                            .map(
+                              (p) => DropdownMenuItem<String>(
+                                value: p['userId']?.toString(),
+                                child: Text(
+                                  p['email']?.toString() ??
+                                      p['displayName']?.toString() ??
+                                      'Patient',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() => _selectedPatientId = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
                 DropdownButtonFormField<String>(
                   value: _mealType,
                   decoration: const InputDecoration(

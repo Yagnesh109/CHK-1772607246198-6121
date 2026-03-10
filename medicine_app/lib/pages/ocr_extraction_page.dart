@@ -30,12 +30,89 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
   String _mealRelation = 'Before Meal';
   bool _isExtracting = false;
   bool _isSaving = false;
+  bool _isCaregiver = false;
+  List<Map<String, dynamic>> _extractedItems = [];
+  List<Map<String, dynamic>> _patients = [];
+  String? _selectedRelation;
+  String? _selectedPatientId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRoleAndPatients();
+  }
 
   @override
   void dispose() {
     _medicineNameController.dispose();
     _dosageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadRoleAndPatients() async {
+    final profile = await SecureStoreService.getUserProfile();
+    final role = profile['role']?.toString().trim();
+    if (role != 'Caregiver') return;
+
+    final patientsResponse = await SecureStoreService.getCaregiverPatients();
+    final items = (patientsResponse['items'] as List?) ?? [];
+    if (!mounted) return;
+    setState(() {
+      _isCaregiver = true;
+      _patients = items
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      _syncCaregiverSelection();
+    });
+  }
+
+  List<String> _caregiverRelations() {
+    final values = <String>[];
+    for (final patient in _patients) {
+      final relation = patient['relation']?.toString().trim() ?? '';
+      if (relation.isNotEmpty && !values.contains(relation)) {
+        values.add(relation);
+      }
+    }
+    return values;
+  }
+
+  List<Map<String, dynamic>> _patientsForSelectedRelation() {
+    if (_selectedRelation == null || _selectedRelation!.isEmpty) {
+      return _patients;
+    }
+    return _patients.where((patient) {
+      final relation = patient['relation']?.toString().trim() ?? '';
+      return relation == _selectedRelation;
+    }).toList();
+  }
+
+  void _syncCaregiverSelection() {
+    final relations = _caregiverRelations();
+    if (relations.isEmpty) {
+      _selectedRelation = null;
+      _selectedPatientId = null;
+      return;
+    }
+
+    if (_selectedRelation == null || !relations.contains(_selectedRelation)) {
+      _selectedRelation = relations.first;
+    }
+
+    final visiblePatients = _patientsForSelectedRelation();
+    if (visiblePatients.isEmpty) {
+      _selectedPatientId = null;
+      return;
+    }
+
+    final visibleIds = visiblePatients
+        .map((patient) => patient['userId']?.toString())
+        .whereType<String>()
+        .toList();
+    if (_selectedPatientId == null ||
+        !visibleIds.contains(_selectedPatientId)) {
+      _selectedPatientId = visibleIds.first;
+    }
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -106,9 +183,24 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
 
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
 
       if (!mounted) return;
+
+      Map<String, dynamic> body;
+      try {
+        body = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'OCR extraction failed (${response.statusCode}): Invalid response format.',
+            ),
+          ),
+        );
+        return;
+      }
+
       if (response.statusCode != 200 || body['error'] != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -121,20 +213,15 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
         return;
       }
 
-      _medicineNameController.text = body['medicineName']?.toString() ?? '';
-      _dosageController.text = body['dosage']?.toString() ?? '';
-      _startDate = _parseDate(body['startDate']?.toString());
-      _endDate = _parseDate(body['endDate']?.toString());
-      _time = _parseTime(body['time']?.toString());
-
-      final mealType = body['mealType']?.toString().trim() ?? '';
-      if (['Breakfast', 'Lunch', 'Dinner'].contains(mealType)) {
-        _mealType = mealType;
-      }
-
-      final mealRelation = body['mealRelation']?.toString().trim() ?? '';
-      if (['Before Meal', 'After Meal'].contains(mealRelation)) {
-        _mealRelation = mealRelation;
+      final items = (body['items'] as List?) ?? [];
+      if (items.isNotEmpty) {
+        _extractedItems = items
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        _applyExtracted(_extractedItems.first);
+      } else {
+        _extractedItems = [];
+        _applyExtracted(body);
       }
 
       setState(() {});
@@ -214,6 +301,24 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
     return '$h:$m $p';
   }
 
+  void _applyExtracted(Map<String, dynamic> item) {
+    _medicineNameController.text = item['medicineName']?.toString() ?? '';
+    _dosageController.text = item['dosage']?.toString() ?? '';
+    _startDate = _parseDate(item['startDate']?.toString());
+    _endDate = _parseDate(item['endDate']?.toString());
+    _time = _parseTime(item['time']?.toString());
+
+    final mealType = item['mealType']?.toString().trim() ?? '';
+    if (['Breakfast', 'Lunch', 'Dinner'].contains(mealType)) {
+      _mealType = mealType;
+    }
+
+    final mealRelation = item['mealRelation']?.toString().trim() ?? '';
+    if (['Before Meal', 'After Meal'].contains(mealRelation)) {
+      _mealRelation = mealRelation;
+    }
+  }
+
   Future<void> _saveMedicine({required bool addAnother}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -233,6 +338,22 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
       return;
     }
 
+    if (_isCaregiver &&
+        (_selectedRelation == null || _selectedRelation!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select relation.')));
+      return;
+    }
+
+    if (_isCaregiver &&
+        (_selectedPatientId == null || _selectedPatientId!.isEmpty)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a patient.')));
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
       final response = await SecureStoreService.saveMedicine({
@@ -245,6 +366,7 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
         'mealType': _mealType,
         'mealRelation': _mealRelation,
         'source': 'ocr',
+        'targetPatientId': _isCaregiver ? _selectedPatientId : null,
       });
       if (response['error'] != null) {
         throw Exception(response['error'].toString());
@@ -282,6 +404,15 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final relations = _caregiverRelations();
+    final visiblePatients = _patientsForSelectedRelation();
+    final selectedPatientInView =
+        visiblePatients.any(
+          (patient) => patient['userId']?.toString() == _selectedPatientId,
+        )
+        ? _selectedPatientId
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF87CEEB),
@@ -322,6 +453,46 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                         )
                       : const Text('Upload & Extract'),
                 ),
+                if (_extractedItems.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Extracted medicines (tap Apply to edit/save):',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _extractedItems.length,
+                    separatorBuilder: (_, i) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final item = _extractedItems[index];
+                      return Card(
+                        child: ListTile(
+                          title: Text(
+                            item['medicineName']?.toString().isNotEmpty == true
+                                ? item['medicineName'].toString()
+                                : 'Medicine ${index + 1}',
+                          ),
+                          subtitle: Text(
+                            'Dosage: ${item['dosage']?.toString() ?? '-'}'
+                            '\nTime: ${item['time']?.toString() ?? '-'}'
+                            '\nDates: ${item['startDate'] ?? ''} - ${item['endDate'] ?? ''}',
+                          ),
+                          trailing: TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _applyExtracted(item);
+                              });
+                            },
+                            child: const Text('Apply'),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _medicineNameController,
@@ -368,6 +539,57 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                   child: Text('Time: ${_formatTime(_time)}'),
                 ),
                 const SizedBox(height: 12),
+                if (_isCaregiver)
+                  Column(
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: _selectedRelation,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Relation',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: relations
+                            .map(
+                              (relation) => DropdownMenuItem<String>(
+                                value: relation,
+                                child: Text(relation),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedRelation = value;
+                            _selectedPatientId = null;
+                            _syncCaregiverSelection();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedPatientInView,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Patient',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: visiblePatients
+                            .map(
+                              (p) => DropdownMenuItem<String>(
+                                value: p['userId']?.toString(),
+                                child: Text(
+                                  p['email']?.toString() ??
+                                      p['displayName']?.toString() ??
+                                      'Patient',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setState(() => _selectedPatientId = value);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
                 DropdownButtonFormField<String>(
                   value: _mealType,
                   decoration: const InputDecoration(

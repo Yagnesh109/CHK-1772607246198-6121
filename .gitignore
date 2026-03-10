@@ -57,8 +57,20 @@ __pycache__/
 venv/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.python-version
 *.log
 *.sqlite3
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+site/
+pip-wheel-metadata/
+*.egg-info/
 
 # Flutter / Dart
 **/.dart_tool/
