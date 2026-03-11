@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:translator/translator.dart';
+import 'package:easy_localization/easy_localization.dart';
 import '../features/side_effect/side_effect_ai_service.dart';
 
 class SideEffectCheckerPage extends StatefulWidget {
@@ -24,6 +27,21 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
   SideEffectAnalysisResult? _result;
   String? _error;
   String _selectedGender = '';
+  late FlutterTts _tts;
+  bool _ttsReady = false;
+  bool _speaking = false;
+  final GoogleTranslator _translator = GoogleTranslator();
+
+  Future<void> _loadRoleAndPatients() async {
+    // Placeholder kept for parity with other pages; no role-specific logic needed here.
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _configureTts();
+  }
 
   @override
   void dispose() {
@@ -34,7 +52,94 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
     _genderController.dispose();
     _conditionsController.dispose();
     _notesController.dispose();
+    _tts.stop();
     super.dispose();
+  }
+
+  Future<void> _configureTts() async {
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _speaking = false);
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _speaking = false);
+    });
+    await _setTtsLanguage();
+    if (mounted) setState(() => _ttsReady = true);
+  }
+
+  Future<void> _setTtsLanguage() async {
+    final code = Localizations.localeOf(context).languageCode.toLowerCase();
+    final lang = switch (code) {
+      'hi' => 'hi-IN',
+      'mr' => 'mr-IN',
+      _ => 'en-US',
+    };
+    await _tts.setLanguage(lang);
+  }
+
+  Future<void> _speakResult() async {
+    if (!_ttsReady || _result == null) return;
+    final r = _result!;
+    final buffer = StringBuffer();
+    buffer.writeln('Severity: ${r.severity}.');
+    if (r.urgency.isNotEmpty) buffer.writeln('Urgency: ${r.urgency}.');
+    if (r.recommendation.isNotEmpty) buffer.writeln(r.recommendation);
+    if (r.immediateActions.isNotEmpty) {
+      buffer.writeln('Immediate actions: ${r.immediateActions.join(', ')}.');
+    }
+    if (r.warningSigns.isNotEmpty) {
+      buffer.writeln('Warning signs: ${r.warningSigns.join(', ')}.');
+    }
+    final text = buffer.toString().trim();
+    if (text.isEmpty) return;
+    setState(() => _speaking = true);
+    await _tts.stop();
+    await _tts.speak(text);
+  }
+
+  Future<void> _stopTts() async {
+    await _tts.stop();
+    if (mounted) setState(() => _speaking = false);
+  }
+
+  Future<SideEffectAnalysisResult> _localizeResult(
+    SideEffectAnalysisResult res,
+  ) async {
+    final locale = Localizations.localeOf(context).languageCode.toLowerCase();
+    if (locale == 'en') return res;
+
+    Future<String> t(String input) async {
+      if (input.trim().isEmpty) return input;
+      try {
+        final out = await _translator.translate(input, to: locale);
+        return out.text;
+      } catch (_) {
+        return input;
+      }
+    }
+
+    Future<List<String>> tl(List<String> list) async {
+      final out = <String>[];
+      for (final item in list) {
+        out.add(await t(item));
+      }
+      return out;
+    }
+
+    return SideEffectAnalysisResult(
+      severity: await t(res.severity),
+      urgency: await t(res.urgency),
+      doctorConsultationNeeded: res.doctorConsultationNeeded,
+      recommendation: await t(res.recommendation),
+      possibleReasons: await tl(res.possibleReasons),
+      immediateActions: await tl(res.immediateActions),
+      warningSigns: await tl(res.warningSigns),
+      confidence: res.confidence,
+      source: res.source,
+    );
   }
 
   List<String> _split(String input) =>
@@ -76,7 +181,8 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
         ),
       );
       if (!mounted) return;
-      setState(() => _result = res);
+      final localized = await _localizeResult(res);
+      setState(() => _result = localized);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -106,7 +212,7 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D47A1),
-        title: const Text('Side Effect Analyzer'),
+        title: Text(tr('side_effect_analyzer')),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -138,7 +244,7 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Hi ${user?.displayName ?? ''}, describe the issue',
+                tr('side_effect_greeting', args: [user?.displayName ?? '']),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -148,19 +254,19 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _medicineController,
-                decoration: const InputDecoration(
-                  labelText: 'Medicine name',
-                  prefixIcon: Icon(Icons.medication_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('medicine_name_label'),
+                  prefixIcon: const Icon(Icons.medication_outlined),
                 ),
                 validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
+                    v == null || v.trim().isEmpty ? tr('required') : null,
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _doseController,
-                decoration: const InputDecoration(
-                  labelText: 'Dose (optional)',
-                  prefixIcon: Icon(Icons.science_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('dose_optional'),
+                  prefixIcon: const Icon(Icons.science_outlined),
                 ),
               ),
               const SizedBox(height: 10),
@@ -168,28 +274,28 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
                 controller: _symptomsController,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Symptoms (comma separated)',
-                  prefixIcon: Icon(Icons.sick_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('symptoms_label'),
+                  prefixIcon: const Icon(Icons.sick_outlined),
                 ),
                 validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Required' : null,
+                    v == null || v.trim().isEmpty ? tr('required') : null,
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: _ageController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Age (optional)',
-                  prefixIcon: Icon(Icons.calendar_month_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('age_optional'),
+                  prefixIcon: const Icon(Icons.calendar_month_outlined),
                 ),
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 value: _selectedGender.isEmpty ? null : _selectedGender,
-                decoration: const InputDecoration(
-                  labelText: 'Gender (optional)',
-                  prefixIcon: Icon(Icons.person_outline),
+                decoration: InputDecoration(
+                  labelText: tr('gender_optional'),
+                  prefixIcon: const Icon(Icons.person_outline),
                 ),
                 items: const [
                   DropdownMenuItem(value: 'Male', child: Text('Male')),
@@ -205,9 +311,9 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
               const SizedBox(height: 10),
               TextFormField(
                 controller: _conditionsController,
-                decoration: const InputDecoration(
-                  labelText: 'Known conditions (comma separated, optional)',
-                  prefixIcon: Icon(Icons.healing_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('conditions_optional'),
+                  prefixIcon: const Icon(Icons.healing_outlined),
                 ),
               ),
               const SizedBox(height: 10),
@@ -215,9 +321,9 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
                 controller: _notesController,
                 minLines: 1,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Extra notes (optional)',
-                  prefixIcon: Icon(Icons.note_alt_outlined),
+                decoration: InputDecoration(
+                  labelText: tr('notes_optional'),
+                  prefixIcon: const Icon(Icons.note_alt_outlined),
                 ),
               ),
               const SizedBox(height: 14),
@@ -233,7 +339,7 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
                         ),
                       )
                     : const Icon(Icons.analytics_outlined),
-                label: Text(_isLoading ? 'Analyzing...' : 'Analyze'),
+                label: Text(_isLoading ? tr('analyzing') : tr('analyze')),
               ),
             ],
           ),
@@ -265,9 +371,12 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
               children: [
                 const Icon(Icons.health_and_safety, color: Color(0xFF0D47A1)),
                 const SizedBox(width: 8),
-                const Text(
-                  'Analysis Result',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                Text(
+                  tr('analysis_result'),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const Spacer(),
                 Chip(
@@ -281,12 +390,12 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
               ],
             ),
             const SizedBox(height: 6),
-            Text('Urgency: ${result.urgency}'),
+            Text('${tr('urgency')}: ${result.urgency}'),
             Text(
-              'Doctor consult needed: ${result.doctorConsultationNeeded ? 'Yes' : 'No'}',
+              '${tr('doctor_consult_needed')}: ${result.doctorConsultationNeeded ? tr('yes') : tr('no')}',
             ),
             Text(
-              'Confidence: ${(result.confidence * 100).toStringAsFixed(0)}%',
+              '${tr('confidence')}: ${(result.confidence * 100).toStringAsFixed(0)}%',
             ),
             if (result.recommendation.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -296,13 +405,29 @@ class _SideEffectCheckerPageState extends State<SideEffectCheckerPage> {
               ),
             ],
             const SizedBox(height: 10),
-            _listBlock('Possible reasons', result.possibleReasons),
-            _listBlock('Immediate actions', result.immediateActions),
-            _listBlock('Warning signs', result.warningSigns),
+            _listBlock(tr('possible_reasons'), result.possibleReasons),
+            _listBlock(tr('immediate_actions'), result.immediateActions),
+            _listBlock(tr('warning_signs'), result.warningSigns),
             const SizedBox(height: 6),
-            const Text(
-              'Note: This is AI-generated guidance, not medical advice.',
-              style: TextStyle(color: Colors.blueGrey, fontSize: 12),
+            Text(
+              tr('ai_note'),
+              style: const TextStyle(color: Colors.blueGrey, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: (!_ttsReady || _speaking) ? null : _speakResult,
+                  icon: const Icon(Icons.volume_up),
+                  label: Text(tr('play')),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: _speaking ? _stopTts : null,
+                  icon: const Icon(Icons.pause),
+                  label: Text(tr('pause')),
+                ),
+              ],
             ),
           ],
         ),

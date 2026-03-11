@@ -44,6 +44,8 @@ dependencies:
   google_sign_in: ^6.3.0
   easy_localization: ^3.0.7
   shared_preferences: ^2.2.3
+  flutter_tts: ^4.0.2
+  translator: ^1.0.0
 
 dev_dependencies:
   flutter_test:

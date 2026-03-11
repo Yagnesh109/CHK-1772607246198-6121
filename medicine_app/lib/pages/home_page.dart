@@ -5,6 +5,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'add_medicine_page.dart';
+import '../core/navigation/route_observer.dart';
 import '../features/secure/data/secure_store_service.dart';
 import 'add_patient_page.dart';
 import 'doctor_chat_page.dart';
@@ -17,7 +19,9 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with RouteAware {
+  final GlobalKey<_PatientDashboardState> _patientDashboardKey =
+      GlobalKey<_PatientDashboardState>();
   Future<Map<String, dynamic>> _loadProfile() {
     return SecureStoreService.getUserProfile();
   }
@@ -92,7 +96,19 @@ class _HomePageState extends State<HomePage> {
                 ],
                 if (role == 'Patient') ...[
                   const SizedBox(height: 12),
-                  const _PatientPendingMedicinesSection(),
+                  _PatientDashboard(
+                    key: _patientDashboardKey,
+                    onAddMedicine: () async {
+                      final result = await Navigator.of(context).push<bool>(
+                        MaterialPageRoute(
+                          builder: (_) => const AddMedicinePage(),
+                        ),
+                      );
+                      if (mounted && result == true) {
+                        _patientDashboardKey.currentState?.reload();
+                      }
+                    },
+                  ),
                 ],
                 if (role == 'Doctor') ...[
                   const SizedBox(height: 12),
@@ -107,12 +123,14 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _PatientPendingMedicinesSection extends StatefulWidget {
-  const _PatientPendingMedicinesSection();
+class _PatientDashboard extends StatefulWidget {
+  const _PatientDashboard({Key? key, required this.onAddMedicine})
+      : super(key: key);
+
+  final Future<void> Function() onAddMedicine;
 
   @override
-  State<_PatientPendingMedicinesSection> createState() =>
-      _PatientPendingMedicinesSectionState();
+  State<_PatientDashboard> createState() => _PatientDashboardState();
 }
 
 class _CaregiverPatientsSection extends StatefulWidget {
@@ -460,14 +478,15 @@ class _DoctorAcceptedSection extends StatelessWidget {
   }
 }
 
-class _PatientPendingMedicinesSectionState
-    extends State<_PatientPendingMedicinesSection> with WidgetsBindingObserver {
+class _PatientDashboardState extends State<_PatientDashboard>
+    with WidgetsBindingObserver {
   Timer? _timer;
   bool _loading = true;
   bool _taking = false;
   String? _error;
   int _pendingCount = 0;
   List<Map<String, dynamic>> _items = [];
+  final Set<String> _locallyTaken = {};
 
   @override
   void initState() {
@@ -475,7 +494,7 @@ class _PatientPendingMedicinesSectionState
     WidgetsBinding.instance.addObserver(this);
     _loadTodaySummary();
     _timer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 5),
       (_) => _loadTodaySummary(),
     );
   }
@@ -487,6 +506,10 @@ class _PatientPendingMedicinesSectionState
     super.dispose();
   }
 
+  void reload() {
+    _loadTodaySummary();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
@@ -496,7 +519,8 @@ class _PatientPendingMedicinesSectionState
 
   Future<void> _loadTodaySummary() async {
     try {
-      final response = await SecureStoreService.getTodayMedicineSummary();
+      // Use full medicines list to avoid backend summary cache issues.
+      final response = await SecureStoreService.getMedicines();
       if (!mounted) return;
       if (response['error'] != null) {
         setState(() {
@@ -506,10 +530,69 @@ class _PatientPendingMedicinesSectionState
         return;
       }
       final items = (response['items'] as List?) ?? [];
+      final now = DateTime.now();
+      final todayDate =
+          DateTime(now.year, now.month, now.day); // zeroed time for compare
+
+      DateTime? _parseDate(dynamic value) {
+        if (value == null) return null;
+        final str = value.toString();
+        if (str.isEmpty) return null;
+        // Accept ISO or yyyy-MM-dd
+        try {
+          return DateTime.parse(str);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      List<Map<String, dynamic>> filtered = [];
+      for (final e in items) {
+        final map = Map<String, dynamic>.from(e as Map);
+        final id = map['id']?.toString() ?? map['medicineId']?.toString() ?? '';
+        final start = _parseDate(map['startDate']);
+        final end = _parseDate(map['endDate']);
+        final startDay = start != null
+            ? DateTime(start.year, start.month, start.day)
+            : todayDate;
+        final endDay =
+            end != null ? DateTime(end.year, end.month, end.day) : null;
+
+        final isTodayInRange =
+            !todayDate.isBefore(startDay) && (endDay == null || !todayDate.isAfter(endDay));
+        if (!isTodayInRange) continue;
+
+        // If user marked as taken locally, reflect immediately.
+        if (id.isNotEmpty && _locallyTaken.contains(id)) {
+          map['status'] = 'taken';
+        }
+        final statusRaw = (map['status'] ?? '').toString().toLowerCase().trim();
+        // Simple "can take now": enable when current time is at/after scheduled time.
+        final hour = int.tryParse(map['timeHour']?.toString() ?? '');
+        final minute = int.tryParse(map['timeMinute']?.toString() ?? '');
+        if (hour != null && minute != null) {
+          final scheduled = DateTime(
+            todayDate.year,
+            todayDate.month,
+            todayDate.day,
+            hour,
+            minute,
+          );
+          map['canTakeNow'] = !now.isBefore(scheduled);
+        }
+
+        filtered.add(map);
+      }
+
       setState(() {
-        _pendingCount =
-            int.tryParse(response['pendingCount']?.toString() ?? '0') ?? 0;
-        _items = items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _items = filtered;
+        _pendingCount = filtered
+            .where(
+              (item) =>
+                  (item['status']?.toString().toLowerCase().trim() ?? 'pending') ==
+                  'pending',
+            )
+            .length;
         _error = null;
         _loading = false;
       });
@@ -536,6 +619,9 @@ class _PatientPendingMedicinesSectionState
 
   Future<void> _markTaken(String medicineId) async {
     setState(() {
+      if (medicineId.isNotEmpty) {
+        _locallyTaken.add(medicineId);
+      }
       _taking = true;
       _items = _items
           .where((item) => item['medicineId']?.toString() != medicineId)
@@ -571,15 +657,12 @@ class _PatientPendingMedicinesSectionState
     final pendingItems = _items
         .where(
           (item) =>
-              (item['status']?.toString().toLowerCase().trim() ?? '') ==
+              (item['status']?.toString().toLowerCase().trim() ?? 'pending') ==
               'pending',
         )
         .toList();
     final today = DateTime.now();
-    final weekday =
-        DateFormat.EEEE(context.locale.toString()).format(today);
-    final dateLabel =
-        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final dateLabel = DateFormat.yMMMMd(context.locale.toString()).format(today);
 
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
@@ -591,40 +674,244 @@ class _PatientPendingMedicinesSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                title: tr('todays_medicines'),
-                subtitle: '$weekday, $dateLabel',
-                value: pendingItems.length.toString(),
-                accent: Colors.blue.shade700,
-                accentLight: Colors.blue.shade50,
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: tr('refresh'),
-              onPressed: _loading ? null : _loadTodaySummary,
-            ),
-          ],
-        ),
+        const _SloganCard(),
         const SizedBox(height: 12),
-        if (pendingItems.isEmpty)
-          Text(tr('no_pending_today'), textAlign: TextAlign.center)
-        else
-          ...pendingItems.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _SinglePendingCard(
-                item: item,
-                formatTime: (h, m) => _formatTime(context, h, m),
-                taking: _taking,
-                onTaken: () => _markTaken(item['medicineId']?.toString() ?? ''),
+        _SummaryCard(
+          dateLabel: dateLabel,
+          pendingCount: _pendingCount,
+          onRefresh: _loadTodaySummary,
+          loading: _loading,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          tr('todays_schedule'),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _ScheduleCard(
+          pendingItems: pendingItems,
+          taking: _taking,
+          formatTime: (h, m) => _formatTime(context, h, m),
+          onTaken: (id) => _markTaken(id),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _taking
+                ? null
+                : () async {
+                    await widget.onAddMedicine();
+                  },
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              backgroundColor: const Color(0xFF1E88E5),
+            ),
+            icon: const Icon(Icons.add_circle_outline, color: Colors.white),
+            label: Text(
+              tr('add_medicine'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
+        ),
       ],
+    );
+  }
+}
+
+class _SloganCard extends StatelessWidget {
+  const _SloganCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFEBF4FF), Color(0xFFDCEBFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            tr('health_is_wealth'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0D47A1),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            tr('health_is_wealth_subtitle'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF3A4A67),
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.dateLabel,
+    required this.pendingCount,
+    required this.onRefresh,
+    required this.loading,
+  });
+
+  final String dateLabel;
+  final int pendingCount;
+  final VoidCallback onRefresh;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F1FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.calendar_today, color: Color(0xFF0D47A1)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tr('today_label'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    dateLabel,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  pendingCount.toString(),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  tr('pending_label'),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+            IconButton(
+              onPressed: loading ? null : onRefresh,
+              icon: const Icon(Icons.refresh),
+              tooltip: tr('refresh'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleCard extends StatelessWidget {
+  const _ScheduleCard({
+    required this.pendingItems,
+    required this.taking,
+    required this.formatTime,
+    required this.onTaken,
+  });
+
+  final List<Map<String, dynamic>> pendingItems;
+  final bool taking;
+  final String Function(dynamic, dynamic) formatTime;
+  final Function(String) onTaken;
+
+  @override
+  Widget build(BuildContext context) {
+    if (pendingItems.isEmpty) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+          child: Column(
+            children: [
+              Icon(Icons.check_circle_outline,
+                  size: 48, color: Colors.blue.shade300),
+              const SizedBox(height: 10),
+              Text(
+                tr('no_pending_today'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                tr('no_pending_today_hint'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: pendingItems
+          .map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _SinglePendingCard(
+                item: item,
+                formatTime: formatTime,
+                taking: taking,
+                onTaken: () => onTaken(item['id']?.toString() ?? item['medicineId']?.toString() ?? ''),
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -644,6 +931,13 @@ class _SinglePendingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canTakeNow = item['canTakeNow'] == true;
+    final name = (item['medicineName'] ?? item['name'] ?? tr('medicine'))
+        .toString();
+    final dosage = (item['dosage'] ?? '').toString();
+    final timeLabel =
+        formatTime(item['timeHour'], item['timeMinute']).toString();
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -654,19 +948,23 @@ class _SinglePendingCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item['medicineName']?.toString() ?? tr('medicine'),
+                    name,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text('${tr('time')}: ${formatTime(item['timeHour'], item['timeMinute'])}'),
-                  Text('${tr('dosage')}: ${item['dosage']?.toString() ?? '-'}'),
+                  Text('${tr('time')}: $timeLabel'),
+                  Text(
+                    dosage.isEmpty
+                        ? '${tr('dosage')}: -'
+                        : '${tr('dosage')}: $dosage',
+                  ),
                 ],
               ),
             ),
-            if (item['canTakeNow'] == true)
+            if (canTakeNow)
               ElevatedButton(
                 onPressed: taking ? null : onTaken,
                 style: ElevatedButton.styleFrom(
@@ -680,75 +978,6 @@ class _SinglePendingCard extends StatelessWidget {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.accent,
-    required this.accentLight,
-  });
-
-  final String title;
-  final String? subtitle;
-  final String value;
-  final Color accent;
-  final Color accentLight;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: accentLight,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withOpacity(0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withOpacity(0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: accent,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              subtitle!,
-              style: TextStyle(
-                color: accent.withOpacity(0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              color: accent,
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              height: 1.1,
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -153,7 +153,12 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     });
   }
 
-  String _formatDate(BuildContext context, DateTime? date) {
+  String _formatDateIso(DateTime? date) {
+    if (date == null) return '';
+    return DateFormat('yyyy-MM-dd').format(date);
+  }
+
+  String _formatDateLabel(BuildContext context, DateTime? date) {
     if (date == null) return tr('select_date');
     return DateFormat.yMMMd(context.locale.toString()).format(date);
   }
@@ -175,18 +180,16 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
 
     if (!_formKey.currentState!.validate()) return;
     if (_startDate == null || _endDate == null || _time == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(tr('select_start_end_time')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('select_start_end_time'))));
       return;
     }
 
     if (_endDate!.isBefore(_startDate!)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('end_before_start'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('end_before_start'))));
       return;
     }
 
@@ -211,8 +214,8 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       final response = await SecureStoreService.saveMedicine({
         'medicineName': _medicineNameController.text.trim(),
         'dosage': _dosageController.text.trim(),
-        'startDate': _formatDate(context, _startDate),
-        'endDate': _formatDate(context, _endDate),
+        'startDate': _formatDateIso(_startDate),
+        'endDate': _formatDateIso(_endDate),
         'timeHour': _time!.hour,
         'timeMinute': _time!.minute,
         'mealType': _mealType,
@@ -241,18 +244,12 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
           _mealRelation = 'Before Meal';
         });
       } else {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(
-          content: Text(
-            tr('failed_to_save_medicine', args: ['$e']),
-          ),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('failed_to_save_medicine', args: ['$e']))),
       );
     } finally {
       if (mounted) {
@@ -353,8 +350,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.medication_outlined),
                 ),
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? tr('required') : null,
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? tr('required')
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -364,8 +362,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                   border: const OutlineInputBorder(),
                   prefixIcon: const Icon(Icons.science_outlined),
                 ),
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? tr('required') : null,
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? tr('required')
+                    : null,
               ),
               const SizedBox(height: 12),
               Row(
@@ -374,7 +373,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickStartDate,
                       icon: const Icon(Icons.event),
-                      label: Text('${tr('start')}: ${_formatDate(context, _startDate)}'),
+                      label: Text(
+                        '${tr('start')}: ${_formatDateLabel(context, _startDate)}',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -382,7 +383,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickEndDate,
                       icon: const Icon(Icons.event_available),
-                      label: Text('${tr('end')}: ${_formatDate(context, _endDate)}'),
+                      label: Text(
+                        '${tr('end')}: ${_formatDateLabel(context, _endDate)}',
+                      ),
                     ),
                   ),
                 ],
@@ -505,8 +508,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                         ),
                       )
                     : const Icon(Icons.save),
-                label:
-                    Text(_isSaving ? tr('saving') : tr('save_medicine')),
+                label: Text(_isSaving ? tr('saving') : tr('save_medicine')),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(

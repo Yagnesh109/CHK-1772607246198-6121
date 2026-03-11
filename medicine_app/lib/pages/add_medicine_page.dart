@@ -32,7 +32,13 @@ class _AddMedicinePageState extends State<AddMedicinePage> {
       return;
     }
 
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (!mounted) return;
+    if (result == true) {
+      Navigator.of(context).pop(true);
+    }
   }
 
   @override

@@ -44,6 +44,12 @@ serviceAccountKey.json
 **/*-key.*
 **/*secret*.pem
 **/*secret*.p12
+**/*API_KEY*
+**/*API-KEY*
+**/*KEY*.txt
+**/*KEY*.json
+**/*SECRET*.env
+**/*SECRET*.txt
 backend/serviceAccountKey.json
 backend/serviceAccountKey*.json
 medicine_app/android/app/google-services.json

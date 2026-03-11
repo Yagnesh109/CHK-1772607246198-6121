@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:translator/translator.dart';
 import '../data/medicine_service.dart';
 import 'barcode_scanner_screen.dart';
 
@@ -21,6 +23,10 @@ class _MedicineScreenState extends State<MedicineScreen> {
   Map<String, dynamic>? data;
   String? errorMessage;
   bool _loading = false;
+  late FlutterTts _tts;
+  bool _speaking = false;
+  bool _ttsReady = false;
+  final GoogleTranslator _translator = GoogleTranslator();
 
   Future<void> search() async {
     setState(() => _loading = true);
@@ -51,6 +57,33 @@ class _MedicineScreenState extends State<MedicineScreen> {
       }
       _loading = false;
     });
+    _localizeResult();
+  }
+
+  Future<void> _localizeResult() async {
+    if (data == null) return;
+    final locale = context.locale.languageCode.toLowerCase();
+    if (locale == 'en') return;
+    try {
+      final fields = <String, String>{};
+      void addField(String key) {
+        final val = data?[key]?.toString().trim();
+        if (val != null && val.isNotEmpty) fields[key] = val;
+      }
+
+      addField('usage');
+      addField('dosage');
+      addField('side_effects');
+      addField('warning');
+
+      for (final entry in fields.entries) {
+        final translated = await _translator.translate(entry.value, to: locale);
+        data?[entry.key] = translated.text;
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Silently fall back to English on failure.
+    }
   }
 
   Future<void> _scanBarcode() async {
@@ -139,7 +172,66 @@ class _MedicineScreenState extends State<MedicineScreen> {
   @override
   void dispose() {
     controller.dispose();
+    _tts.stop();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _configureTts();
+  }
+
+  Future<void> _configureTts() async {
+    await _tts.setSpeechRate(0.5);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _speaking = false);
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() => _speaking = false);
+    });
+    await _setTtsLanguage();
+    if (mounted) setState(() => _ttsReady = true);
+  }
+
+  Future<void> _setTtsLanguage() async {
+    final code = context.locale.languageCode.toLowerCase();
+    final lang = switch (code) {
+      'hi' => 'hi-IN',
+      'mr' => 'mr-IN',
+      _ => 'en-US',
+    };
+    await _tts.setLanguage(lang);
+  }
+
+  Future<void> _speakCurrent() async {
+    if (!_ttsReady || data == null) return;
+    final brand = data?['brand']?.toString().trim();
+    final usage = data?['usage']?.toString().trim();
+    final dosage = data?['dosage']?.toString().trim();
+    final side = data?['side_effects']?.toString().trim();
+    final warning = data?['warning']?.toString().trim();
+
+    final buffer = StringBuffer();
+    buffer.writeln(brand?.isNotEmpty == true ? brand : tr('medicine'));
+    if (usage?.isNotEmpty == true) buffer.writeln(usage);
+    if (dosage?.isNotEmpty == true) buffer.writeln('${tr('dosage')}: $dosage');
+    if (side?.isNotEmpty == true) buffer.writeln(side);
+    if (warning?.isNotEmpty == true) buffer.writeln(warning);
+
+    final text = buffer.toString().trim();
+    if (text.isEmpty) return;
+    setState(() => _speaking = true);
+    await _tts.stop();
+    await _tts.speak(text);
+  }
+
+  Future<void> _stopTts() async {
+    await _tts.stop();
+    if (mounted) setState(() => _speaking = false);
   }
 
   @override
@@ -248,7 +340,9 @@ class _MedicineScreenState extends State<MedicineScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        brand?.isNotEmpty == true ? brand! : tr('unknown_medicine'),
+                        brand?.isNotEmpty == true
+                            ? brand!
+                            : tr('unknown_medicine'),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -281,6 +375,22 @@ class _MedicineScreenState extends State<MedicineScreen> {
               Icons.warning_amber_outlined,
               sideEffects,
               tr('side_effects_not_available'),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: (!_ttsReady || _speaking) ? null : _speakCurrent,
+                  icon: const Icon(Icons.volume_up),
+                  label: Text(tr('play')),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: _speaking ? _stopTts : null,
+                  icon: const Icon(Icons.pause),
+                  label: Text(tr('pause')),
+                ),
+              ],
             ),
           ],
         ),

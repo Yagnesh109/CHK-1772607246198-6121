@@ -12,6 +12,7 @@ import '../pages/medicine_history_page.dart';
 import '../pages/profile_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/side_effect_checker_page.dart';
+import '../features/voice/voice_assistant_page.dart';
 
 class AppSidebar extends StatelessWidget {
   const AppSidebar({super.key});
@@ -128,6 +129,16 @@ class AppSidebar extends StatelessWidget {
                 );
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.assistant),
+            title: Text(tr('assistant_title')),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const VoiceAssistantPage()));
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.settings_outlined),
             title: Text(tr('settings')),

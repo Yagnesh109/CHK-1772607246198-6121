@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import '../features/ocr/gemini_prescription_service.dart';
 import '../features/secure/data/secure_store_service.dart';
 
@@ -335,6 +336,11 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  String _formatDateLabel(DateTime? date) {
+    if (date == null) return 'Select Date';
+    return DateFormat.yMMMd().format(date);
+  }
+
   String _formatTime(TimeOfDay? time) {
     if (time == null) return 'Select Time';
     final h = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
@@ -529,6 +535,10 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
           children: [
             OutlinedButton.icon(
               onPressed: _showImageSourceChooser,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF0D47A1),
+                side: const BorderSide(color: Color(0xFF0D47A1)),
+              ),
               icon: const Icon(Icons.add_a_photo_outlined),
               label: const Text('Capture / Upload Image'),
             ),
@@ -545,6 +555,10 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
             const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: _isExtracting ? null : _extractUsingGemini,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E88E5),
+                foregroundColor: Colors.white,
+              ),
               icon: _isExtracting
                   ? const SizedBox(
                       width: 18,
@@ -729,7 +743,7 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickStartDate,
                       icon: const Icon(Icons.event),
-                      label: Text('Start: ${_formatDate(_startDate)}'),
+                      label: Text('Start: ${_formatDateLabel(_startDate)}'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -737,7 +751,7 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                     child: OutlinedButton.icon(
                       onPressed: _pickEndDate,
                       icon: const Icon(Icons.event_available),
-                      label: Text('End: ${_formatDate(_endDate)}'),
+                      label: Text('End: ${_formatDateLabel(_endDate)}'),
                     ),
                   ),
                 ],
@@ -798,7 +812,8 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                     : () => _saveMedicine(addAnother: false),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: const Color(0xFF0D47A1),
+                  backgroundColor: const Color(0xFF1E88E5),
+                  foregroundColor: Colors.white,
                 ),
                 icon: _isSaving
                     ? const SizedBox(
@@ -821,6 +836,8 @@ class _OcrExtractionPageState extends State<OcrExtractionPage> {
                 label: const Text('Save and Add Medicine'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  foregroundColor: const Color(0xFF0D47A1),
+                  side: const BorderSide(color: Color(0xFF0D47A1)),
                 ),
               ),
             ],

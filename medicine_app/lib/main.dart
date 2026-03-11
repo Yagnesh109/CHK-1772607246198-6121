@@ -4,11 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/theme/app_theme.dart';
+import 'core/navigation/route_observer.dart';
 import 'features/secure/data/secure_store_service.dart';
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
 import 'pages/login_page.dart';
 import 'pages/role_selection_page.dart';
+import 'features/voice/voice_assistant_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +44,8 @@ class MedicineApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
       title: 'MediMind',
+      navigatorObservers: [appRouteObserver],
+      builder: (context, child) => child ?? const SizedBox.shrink(),
       home: const _AuthGate(),
     );
   }
