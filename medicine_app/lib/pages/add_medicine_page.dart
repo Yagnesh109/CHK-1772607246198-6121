@@ -1,0 +1,144 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import '../features/secure/data/secure_store_service.dart';
+import 'manualentry.dart';
+import 'ocr_extraction_page.dart';
+
+class AddMedicinePage extends StatefulWidget {
+  const AddMedicinePage({super.key});
+
+  @override
+  State<AddMedicinePage> createState() => _AddMedicinePageState();
+}
+
+class _AddMedicinePageState extends State<AddMedicinePage> {
+  Future<void> _openIfAllowed(Widget page) async {
+    // Force refresh so we have latest phone number; cached role-only response
+    // would miss phone and incorrectly block patients.
+    final profile = await SecureStoreService.getUserProfile(forceRefresh: true);
+    if (!mounted) return;
+
+    if (profile['error'] != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(profile['error'].toString())));
+      return;
+    }
+
+    final role = profile['role']?.toString().trim();
+    final phone = profile['phoneNumber']?.toString().trim() ?? '';
+    if (role == 'Patient' && phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('add_mobile_first')),
+      ));
+      return;
+    }
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => page),
+    );
+    if (!mounted) return;
+    if (result == true) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF87CEEB),
+        centerTitle: true,
+        title: Text(tr('add_medicine')),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.edit_note_outlined,
+              title: tr('manual_entry'),
+              subtitle: tr('manual_entry_subtitle'),
+              onTap: () => _openIfAllowed(const ManualEntryPage()),
+            ),
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.document_scanner_outlined,
+              title: tr('ocr_extraction'),
+              subtitle: tr('ocr_extraction_subtitle'),
+              onTap: () => _openIfAllowed(const OcrExtractionPage()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: const Color(0xFF87CEEB).withOpacity(0.28),
+                child: Icon(icon, color: Colors.black87),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Colors.black54,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
